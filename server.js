@@ -309,7 +309,6 @@ async function encryptFileChunked(srcPath, destPath, key) {
       header.writeUInt32BE(ciphertext.length, 0);
 
       writeStream.write(header);
-      writeStream.write(newIv => {}); // Dummy call to avoid syntax issues if needed, ignored
       writeStream.write(iv);
       writeStream.write(tag);
       writeStream.write(ciphertext);
