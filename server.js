@@ -95,6 +95,54 @@ function saveShares(shares) {
   fs.writeFileSync(filePath, JSON.stringify(shares, null, 2), 'utf8');
 }
 
+function getActivityLogPath() {
+  return (process.platform === 'win32' || process.env.NODE_ENV === 'development')
+    ? path.join(__dirname, 'activity.dev.json')
+    : path.join(CONFIG_DIR, 'activity.json');
+}
+
+function logActivity(username, action, details = '') {
+  try {
+    const logPath = getActivityLogPath();
+    const logDir = path.dirname(logPath);
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    let logs = [];
+    if (fs.existsSync(logPath)) {
+      try {
+        logs = JSON.parse(fs.readFileSync(logPath, 'utf8'));
+      } catch (err) {
+        console.error("Fehler beim Parsen des Aktivitätsprotokolls:", err);
+      }
+    }
+    
+    const newEntry = {
+      timestamp: new Date().toISOString(),
+      username: username || 'System',
+      action: action,
+      details: details
+    };
+    
+    logs.unshift(newEntry);
+    if (logs.length > 1000) {
+      logs = logs.slice(0, 1000);
+    }
+    
+    const tempPath = logPath + '.tmp';
+    fs.writeFileSync(tempPath, JSON.stringify(logs, null, 2), 'utf8');
+    
+    const fd = fs.openSync(tempPath, 'r+');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    
+    fs.renameSync(tempPath, logPath);
+  } catch (e) {
+    console.error("Fehler beim Schreiben des Aktivitätsprotokolls:", e);
+  }
+}
+
 // Cleaner: Löscht abgelaufene Freigaben (Absturzsicherung / Speicherfreigabe)
 function cleanExpiredShares() {
   const config = getConfig();
@@ -261,6 +309,26 @@ function saveMetadata(username, data, storageDir, key) {
   fs.renameSync(tempPath, metaPath);
   
   metadataCache[username.toLowerCase()] = data;
+}
+
+function getNotesFilePath(storageDir, username) {
+  const safeUsername = username.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  return path.join(storageDir, `notes_${safeUsername}.enc`);
+}
+
+function saveNotes(username, data, storageDir, key) {
+  const notesPath = getNotesFilePath(storageDir, username);
+  const tempPath = notesPath + '.tmp';
+  
+  const encryptedData = encryptMetadata(data, key);
+  
+  fs.writeFileSync(tempPath, encryptedData);
+  
+  const fd = fs.openSync(tempPath, 'r+');
+  fs.fsyncSync(fd);
+  fs.closeSync(fd);
+  
+  fs.renameSync(tempPath, notesPath);
 }
 
 // Chunked File Encryption
@@ -496,6 +564,8 @@ app.post('/api/setup', (req, res) => {
     // Save configurations
     saveConfig(config);
 
+    logActivity(cleanUsername, 'Setup', 'System wurde eingerichtet und Admin erstellt');
+
     res.json({ success: true, message: 'Setup erfolgreich abgeschlossen' });
   } catch (e) {
     console.error("Setup Fehler:", e);
@@ -538,6 +608,8 @@ app.post('/api/register', (req, res) => {
     // Save updated configuration
     saveConfig(config);
 
+    logActivity(cleanUsername, 'Registrierung', 'Neuer Account registriert');
+
     res.json({ success: true, message: 'Registrierung erfolgreich' });
   } catch (e) {
     console.error("Registrierungs-Fehler:", e);
@@ -578,6 +650,8 @@ app.post('/api/login', (req, res) => {
     req.session.userId = cleanUsername;
     req.session.encryptionKey = key.toString('hex');
     
+    logActivity(cleanUsername, 'Login', 'Erfolgreich angemeldet');
+
     res.json({ success: true, message: 'Erfolgreich angemeldet' });
   } catch (e) {
     console.error("Login Fehler bei Metadaten Entschlüsselung:", e);
@@ -587,9 +661,13 @@ app.post('/api/login', (req, res) => {
 
 // 5. Logout
 app.post('/api/logout', (req, res) => {
+  const username = req.session ? req.session.userId : null;
   req.session.destroy((err) => {
     if (err) {
       return res.status(500).json({ error: 'Abmeldung fehlgeschlagen' });
+    }
+    if (username) {
+      logActivity(username, 'Logout', 'Erfolgreich abgemeldet');
     }
     res.json({ success: true, message: 'Erfolgreich abgemeldet' });
   });
@@ -635,6 +713,7 @@ app.post('/api/mkdir', requireAuth, (req, res) => {
 
     metadata.push(newDir);
     saveMetadata(username, metadata, config.storageDir, key);
+    logActivity(username, 'Ordner-Erstellung', `Ordner erstellt mit ID ${newDir.id}`);
     res.json({ success: true, folder: newDir });
   } catch (e) {
     res.status(500).json({ error: 'Ordner konnte nicht erstellt werden: ' + e.message });
@@ -676,6 +755,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
 
     metadata.push(newFile);
     saveMetadata(username, metadata, config.storageDir, key);
+    logActivity(username, 'Datei-Upload', `Datei hochgeladen mit ID ${fileId} (Größe: ${req.file.size} Bytes)`);
 
     res.json({ success: true, file: newFile });
   } catch (e) {
@@ -833,6 +913,7 @@ app.delete('/api/files/:id', requireAuth, (req, res) => {
     }
 
     saveMetadata(username, newMetadata, config.storageDir, key);
+    logActivity(username, 'Löschvorgang', `${item.type === 'dir' ? 'Ordner' : 'Datei'} mit ID ${id} gelöscht (inkl. ${itemsToDelete.length - 1} Unterelementen)`);
     res.json({ success: true, message: 'Elemente erfolgreich gelöscht' });
   } catch (e) {
     res.status(500).json({ error: 'Löschen fehlgeschlagen: ' + e.message });
@@ -903,6 +984,20 @@ app.post('/api/settings/change-password', requireAuth, async (req, res) => {
     const files = metadata.filter(item => item.type === 'file');
     const userStorageDir = getUserStorageDir(config.storageDir, username);
 
+    // Re-encrypt notes if they exist
+    const notesPath = getNotesFilePath(config.storageDir, username);
+    let hasNotes = false;
+    let notesData = [];
+    if (fs.existsSync(notesPath)) {
+      try {
+        const encryptedNotes = fs.readFileSync(notesPath);
+        notesData = decryptMetadata(encryptedNotes, oldKey);
+        hasNotes = true;
+      } catch (err) {
+        console.error("Fehler beim Entschlüsseln der Notizen während der Passwortänderung:", err);
+      }
+    }
+
     const processedFiles = [];
     for (const file of files) {
       const srcPath = path.join(userStorageDir, file.diskPath);
@@ -912,6 +1007,16 @@ app.post('/api/settings/change-password', requireAuth, async (req, res) => {
         await reEncryptFile(srcPath, destPath, oldKey, newKey);
         processedFiles.push({ srcPath, destPath });
       }
+    }
+
+    let notesDestPath = null;
+    if (hasNotes) {
+      notesDestPath = notesPath + '.new';
+      const encryptedNotesNew = encryptMetadata(notesData, newKey);
+      fs.writeFileSync(notesDestPath, encryptedNotesNew);
+      const fd = fs.openSync(notesDestPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
     }
 
     saveMetadata(username, metadata, config.storageDir, newKey);
@@ -927,7 +1032,13 @@ app.post('/api/settings/change-password', requireAuth, async (req, res) => {
       fs.renameSync(pf.destPath, pf.srcPath);
     }
 
+    if (notesDestPath && fs.existsSync(notesDestPath)) {
+      fs.renameSync(notesDestPath, notesPath);
+    }
+
     req.session.encryptionKey = newKey.toString('hex');
+
+    logActivity(username, 'Einstellungen', 'Passwort geändert und Daten neu verschlüsselt');
 
     res.json({ success: true, message: 'Passwort erfolgreich geändert und alle Dateien neu verschlüsselt.' });
   } catch (e) {
@@ -942,6 +1053,14 @@ app.post('/api/settings/change-password', requireAuth, async (req, res) => {
         }
       }
     } catch (e2) {}
+
+    try {
+      const notesPath = getNotesFilePath(config.storageDir, username);
+      const notesNewPath = notesPath + '.new';
+      if (fs.existsSync(notesNewPath)) {
+        fs.unlinkSync(notesNewPath);
+      }
+    } catch (e3) {}
 
     res.status(500).json({ error: 'Re-Verschlüsselung der Dateien fehlgeschlagen: ' + e.message });
   }
@@ -1018,6 +1137,11 @@ app.delete('/api/admin/users/:username', requireAuth, requireAdmin, (req, res) =
       fs.unlinkSync(metaPath);
     }
 
+    const notesPath = getNotesFilePath(config.storageDir, targetUser);
+    if (fs.existsSync(notesPath)) {
+      fs.unlinkSync(notesPath);
+    }
+
     delete config.users[targetUser];
     saveConfig(config);
 
@@ -1042,6 +1166,8 @@ app.delete('/api/admin/users/:username', requireAuth, requireAdmin, (req, res) =
       }
     }
     saveShares(activeShares);
+
+    logActivity(currentAdmin, 'Benutzerverwaltung', `Benutzer ${targetUser} gelöscht`);
 
     res.json({ success: true, message: `Benutzer ${targetUser} und alle seine Dateien wurden gelöscht.` });
   } catch (e) {
@@ -1070,13 +1196,15 @@ app.post('/api/admin/maintenance', requireAuth, requireAdmin, (req, res) => {
     if (offline) {
       fs.writeFileSync(flagPath, '');
       console.log("System per Web-Admin OFFLINE geschaltet.");
+      logActivity(req.session.userId, 'Wartungsmodus', 'Wartungsmodus aktiviert');
       res.json({ success: true, offline: true, message: 'Wartungsmodus aktiviert. Die Cloud ist jetzt offline.' });
     } else {
       if (fs.existsSync(flagPath)) {
         fs.unlinkSync(flagPath);
       }
       console.log("System per Web-Admin ONLINE geschaltet.");
-      res.json({ success: true, offline: false, message: 'Wartungsmodus deaktiviert. Die Cloud ist wieder online.' });
+      logActivity(req.session.userId, 'Wartungsmodus', 'Wartungsmodus deaktiviert');
+      res.json({ success: true, offline: false, message: 'Wartungsmodus deaktiviert. Die Cloud is wieder online.' });
     }
   } catch (e) {
     console.error("Fehler beim Ändern des Wartungsmodus:", e);
@@ -1088,6 +1216,8 @@ app.post('/api/admin/maintenance', requireAuth, requireAdmin, (req, res) => {
 app.post('/api/admin/update', requireAuth, requireAdmin, (req, res) => {
   console.log("Web-Admin hat ein System-Update gestartet.");
   
+  logActivity(req.session.userId, 'System-Update', 'System-Update über Web-Panel gestartet');
+
   // Sofort antworten, damit die HTTP-Verbindung nicht abreißt
   res.json({ success: true, message: 'Update gestartet. Das System startet gleich neu...' });
 
@@ -1171,6 +1301,8 @@ app.post('/api/shares', requireAuth, async (req, res) => {
     shares.push(newShare);
     saveShares(shares);
 
+    logActivity(username, 'Freigabe-Erstellung', `Freigabelink erstellt für Datei-ID ${fileId} (Share-ID: ${shareId})`);
+
     res.json({
       success: true,
       shareId: shareId,
@@ -1220,6 +1352,8 @@ app.delete('/api/shares/:id', requireAuth, (req, res) => {
     // 2. Aus shares.json austragen
     const updatedShares = shares.filter(s => s.id !== id);
     saveShares(updatedShares);
+
+    logActivity(username, 'Freigabe-Löschung', `Freigabelink für Share-ID ${id} gelöscht`);
 
     res.json({ success: true, message: 'Freigabe erfolgreich gelöscht.' });
   } catch (e) {
@@ -1365,6 +1499,72 @@ app.get('/api/public/download/:id', (req, res) => {
 // 21. Route für öffentliche Freigabenseite (HTML)
 app.get('/share/:id', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'share.html'));
+});
+
+// 22. Verschlüsselte Notizen laden
+app.get('/api/notes', requireAuth, (req, res) => {
+  const config = getConfig();
+  const username = req.session.userId;
+  
+  if (!req.session.encryptionKey) {
+    return res.status(401).json({ error: 'Entschlüsselungsschlüssel nicht in Sitzung vorhanden' });
+  }
+  
+  const key = Buffer.from(req.session.encryptionKey, 'hex');
+  
+  try {
+    const notesPath = getNotesFilePath(config.storageDir, username);
+    if (!fs.existsSync(notesPath)) {
+      return res.json([]);
+    }
+    const encryptedData = fs.readFileSync(notesPath);
+    const notes = decryptMetadata(encryptedData, key);
+    res.json(notes);
+  } catch (e) {
+    console.error("Fehler beim Laden/Entschlüsseln der Notizen:", e);
+    res.status(500).json({ error: 'Notizen konnten nicht geladen oder entschlüsselt werden' });
+  }
+});
+
+// 23. Verschlüsselte Notizen speichern
+app.post('/api/notes', requireAuth, (req, res) => {
+  const notes = req.body;
+  if (!Array.isArray(notes)) {
+    return res.status(400).json({ error: 'Notizen müssen als Array übergeben werden' });
+  }
+  
+  const config = getConfig();
+  const username = req.session.userId;
+  
+  if (!req.session.encryptionKey) {
+    return res.status(401).json({ error: 'Entschlüsselungsschlüssel nicht in Sitzung vorhanden' });
+  }
+  
+  const key = Buffer.from(req.session.encryptionKey, 'hex');
+  
+  try {
+    saveNotes(username, notes, config.storageDir, key);
+    res.json({ success: true, message: 'Notizen erfolgreich gespeichert' });
+  } catch (e) {
+    console.error("Fehler beim Speichern der Notizen:", e);
+    res.status(500).json({ error: 'Notizen konnten nicht gespeichert werden: ' + e.message });
+  }
+});
+
+// 24. Aktivitätsprotokoll abfragen (nur für Admins)
+app.get('/api/admin/activity', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const logPath = getActivityLogPath();
+    if (!fs.existsSync(logPath)) {
+      return res.json([]);
+    }
+    const logs = JSON.parse(fs.readFileSync(logPath, 'utf8'));
+    // Die letzten 100 Einträge zurückgeben
+    res.json(logs.slice(0, 100));
+  } catch (e) {
+    console.error("Fehler beim Abrufen des Aktivitätsprotokolls:", e);
+    res.status(500).json({ error: 'Aktivitätsprotokoll konnte nicht geladen werden' });
+  }
 });
 
 // Start Server

@@ -5,6 +5,9 @@ let diskInfo = null;
 let currentUsername = '';
 let currentUserRole = 'user';
 let currentShareFileId = ''; // For sharing dialog
+let allNotes = [];
+let activeNoteId = null;
+let noteHasUnsavedChanges = false;
 
 // DOM Elements
 const setupScreen = document.getElementById('setup-screen');
@@ -137,6 +140,11 @@ function updateDiskUI() {
 
 // Tab Switching Logik
 function switchTab(tabId) {
+  if (noteHasUnsavedChanges && !confirm("Ungespeicherte Änderungen an deiner Notiz verwerfen?")) {
+    return;
+  }
+  noteHasUnsavedChanges = false;
+
   // Deaktiviere alle Tabs und Sektionen
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-section').forEach(sec => sec.classList.remove('active'));
@@ -153,8 +161,11 @@ function switchTab(tabId) {
     refreshFileList();
   } else if (tabId === 'admin') {
     loadUsersList();
+    loadActivityLog();
   } else if (tabId === 'shares') {
     loadSharesList();
+  } else if (tabId === 'notes') {
+    loadNotesList();
   }
 }
 
@@ -1170,5 +1181,255 @@ async function triggerWebUpdate() {
     setTimeout(() => {
       window.location.reload();
     }, 8000);
+  }
+}
+
+// HTML Escaping Helper
+function escapeHTML(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// --- NOTIZEN LOGIK ---
+
+async function loadNotesList() {
+  try {
+    const res = await fetch('/api/notes');
+    if (res.ok) {
+      allNotes = await res.json();
+      renderNotesList();
+      
+      if (activeNoteId) {
+        const stillExists = allNotes.some(n => n.id === activeNoteId);
+        if (stillExists) {
+          selectNote(activeNoteId);
+          return;
+        }
+      }
+      activeNoteId = null;
+      document.getElementById('notes-editor-empty').style.display = 'flex';
+      document.getElementById('notes-editor-active').style.display = 'none';
+    } else {
+      showToast('Notizen konnten nicht geladen werden', 'error');
+    }
+  } catch (err) {
+    showToast('Verbindungsfehler beim Laden der Notizen', 'error');
+  }
+}
+
+function renderNotesList() {
+  const notesListDiv = document.getElementById('notes-list');
+  const searchInput = document.getElementById('notes-search-input');
+  if (!notesListDiv) return;
+
+  notesListDiv.innerHTML = '';
+  
+  const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+  const filtered = allNotes
+    .filter(note => {
+      const titleMatch = (note.title || '').toLowerCase().includes(query);
+      const contentMatch = (note.content || '').toLowerCase().includes(query);
+      return titleMatch || contentMatch;
+    })
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+  if (filtered.length === 0) {
+    notesListDiv.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:13px;">Keine Notizen gefunden</div>';
+    return;
+  }
+
+  filtered.forEach(note => {
+    const item = document.createElement('div');
+    item.className = `note-item ${note.id === activeNoteId ? 'active' : ''}`;
+    item.onclick = () => selectNote(note.id);
+
+    const titleStr = note.title ? note.title.trim() : 'Unbenannte Notiz';
+    const previewStr = note.content ? note.content.trim() : 'Kein Inhalt';
+    const dateStr = new Date(note.updatedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+
+    item.innerHTML = `
+      <div class="note-item-title">${escapeHTML(titleStr)}</div>
+      <div class="note-item-preview">${escapeHTML(previewStr)}</div>
+      <div class="note-item-date">${dateStr}</div>
+    `;
+
+    notesListDiv.appendChild(item);
+  });
+}
+
+function selectNote(id) {
+  if (noteHasUnsavedChanges && !confirm("Ungespeicherte Änderungen an dieser Notiz verwerfen?")) {
+    return;
+  }
+
+  activeNoteId = id;
+  noteHasUnsavedChanges = false;
+
+  const note = allNotes.find(n => n.id === id);
+  if (!note) {
+    document.getElementById('notes-editor-empty').style.display = 'flex';
+    document.getElementById('notes-editor-active').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('notes-editor-empty').style.display = 'none';
+  document.getElementById('notes-editor-active').style.display = 'flex';
+
+  document.getElementById('note-title-input').value = note.title || '';
+  document.getElementById('note-content-input').value = note.content || '';
+
+  const indicator = document.getElementById('note-save-indicator');
+  if (indicator) {
+    indicator.innerText = 'Gespeichert';
+    indicator.classList.remove('unsaved');
+  }
+
+  document.querySelectorAll('.note-item').forEach(el => el.classList.remove('active'));
+  renderNotesList();
+}
+
+function createNewNote() {
+  if (noteHasUnsavedChanges && !confirm("Ungespeicherte Änderungen an deiner aktuellen Notiz verwerfen?")) {
+    return;
+  }
+
+  const newNote = {
+    id: 'new-' + Date.now(),
+    title: 'Neue Notiz',
+    content: '',
+    updatedAt: new Date().toISOString()
+  };
+
+  allNotes.unshift(newNote);
+  activeNoteId = newNote.id;
+  noteHasUnsavedChanges = true;
+
+  renderNotesList();
+  selectNote(newNote.id);
+  markNoteUnsaved();
+}
+
+async function saveActiveNote() {
+  if (!activeNoteId) return;
+
+  const titleVal = document.getElementById('note-title-input').value.trim();
+  const contentVal = document.getElementById('note-content-input').value;
+
+  const noteIndex = allNotes.findIndex(n => n.id === activeNoteId);
+  if (noteIndex === -1) return;
+
+  if (activeNoteId.startsWith('new-')) {
+    const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'note-' + Math.random().toString(36).substring(2, 11);
+    allNotes[noteIndex].id = newId;
+    activeNoteId = newId;
+  }
+
+  allNotes[noteIndex].title = titleVal || 'Unbenannte Notiz';
+  allNotes[noteIndex].content = contentVal;
+  allNotes[noteIndex].updatedAt = new Date().toISOString();
+
+  try {
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(allNotes)
+    });
+
+    if (res.ok) {
+      noteHasUnsavedChanges = false;
+      const indicator = document.getElementById('note-save-indicator');
+      if (indicator) {
+        indicator.innerText = 'Gespeichert';
+        indicator.classList.remove('unsaved');
+      }
+      showToast('Notiz erfolgreich gespeichert');
+      loadNotesList();
+    } else {
+      showToast('Speichern der Notiz fehlgeschlagen', 'error');
+    }
+  } catch (err) {
+    showToast('Netzwerkfehler beim Speichern', 'error');
+  }
+}
+
+async function deleteActiveNote() {
+  if (!activeNoteId) return;
+  if (!confirm("Möchtest du diese Notiz wirklich endgültig löschen?")) return;
+
+  allNotes = allNotes.filter(n => n.id !== activeNoteId);
+  activeNoteId = null;
+  noteHasUnsavedChanges = false;
+
+  try {
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(allNotes)
+    });
+
+    if (res.ok) {
+      showToast('Notiz gelöscht');
+      loadNotesList();
+    } else {
+      showToast('Löschen der Notiz fehlgeschlagen', 'error');
+    }
+  } catch (err) {
+    showToast('Netzwerkfehler beim Löschen', 'error');
+  }
+}
+
+function filterNotes() {
+  renderNotesList();
+}
+
+function markNoteUnsaved() {
+  noteHasUnsavedChanges = true;
+  const indicator = document.getElementById('note-save-indicator');
+  if (indicator) {
+    indicator.innerText = 'Ungespeichert';
+    indicator.classList.add('unsaved');
+  }
+}
+
+// --- AKTIVITÄTSPROTOKOLL LOGIK ---
+
+async function loadActivityLog() {
+  const tbody = document.getElementById('activity-table-body');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch('/api/admin/activity');
+    if (res.ok) {
+      const logs = await res.json();
+      tbody.innerHTML = '';
+
+      if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding: 20px 0;">Keine Aktivitäten protokolliert</td></tr>';
+        return;
+      }
+
+      logs.forEach(log => {
+        const tr = document.createElement('tr');
+        const timeStr = new Date(log.timestamp).toLocaleString('de-DE');
+        
+        tr.innerHTML = `
+          <td style="color: var(--text-muted); font-family: monospace;">${escapeHTML(timeStr)}</td>
+          <td style="font-weight: 600; color: var(--accent-secondary);">${escapeHTML(log.username)}</td>
+          <td><span class="status-badge" style="background: rgba(255,255,255,0.03); color: var(--text-main); border: 1px solid var(--border-glass); text-transform:none;">${escapeHTML(log.action)}</span></td>
+          <td style="color: var(--text-muted);">${escapeHTML(log.details)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } else {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--danger); padding: 20px 0;">Aktivitäten konnten nicht geladen werden</td></tr>';
+    }
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--danger); padding: 20px 0;">Verbindungsfehler beim Laden des Protokolls</td></tr>';
   }
 }
