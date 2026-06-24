@@ -147,10 +147,15 @@ else
   CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
 fi
 
-echo -e "${BLUE}Lade cloudflared für Architektur $ARCH herunter...${NC}"
-wget -q -O /usr/local/bin/cloudflared "$CLOUDFLARED_URL"
-chmod +x /usr/local/bin/cloudflared
-echo -e "${GREEN}cloudflared erfolgreich installiert! Version: $(cloudflared --version | cut -d' ' -f3)${NC}"
+if [ -f "/usr/local/bin/cloudflared" ]; then
+  echo -e "${GREEN}cloudflared ist bereits installiert. Überspringe Download.${NC}"
+else
+  systemctl stop cloudflared-tunnel.service 2>/dev/null || true
+  echo -e "${BLUE}Lade cloudflared für Architektur $ARCH herunter...${NC}"
+  wget -q -O /usr/local/bin/cloudflared "$CLOUDFLARED_URL"
+  chmod +x /usr/local/bin/cloudflared
+  echo -e "${GREEN}cloudflared erfolgreich installiert! Version: $(cloudflared --version | cut -d' ' -f3)${NC}"
+fi
 
 # 7. Systemd-Dienste einrichten und starten
 echo -e "\n${YELLOW}[6/7] Erstelle System-Dienste (systemd)...${NC}"
