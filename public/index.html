@@ -333,6 +333,46 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- System-Verwaltung Bereich (Neu) -->
+            <div class="system-admin-grid" style="margin-top: 40px; border-top: 1px solid var(--border-glass); padding-top: 30px;">
+              <h2 style="margin-bottom: 8px;">System-Verwaltung</h2>
+              <p class="subtitle" style="margin-bottom: 24px;">Verwalte globale Systemeinstellungen wie den Wartungsmodus oder spiele Software-Updates ein.</p>
+              
+              <div class="system-cards-container">
+                
+                <!-- Wartungsmodus Karte -->
+                <div class="system-card glass-card">
+                  <div class="system-card-header">
+                    <div class="system-card-icon" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.2);">
+                      <svg style="fill: #f59e0b; width: 22px; height: 22px; display: block;"><use href="#icon-power"></use></svg>
+                    </div>
+                    <h3>Wartungsmodus</h3>
+                  </div>
+                  <p class="system-card-desc">Schaltet das System offline. Angemeldete Administratoren behalten Zugriff, Gäste sehen die Wartungsseite.</p>
+                  <div class="system-card-action">
+                    <span id="maintenance-status-badge" class="status-badge status-online">Lade...</span>
+                    <button id="btn-toggle-maintenance" class="btn-primary" style="width: auto; padding: 8px 16px; font-size: 13px;" onclick="toggleMaintenance()">Wartungsmodus aktivieren</button>
+                  </div>
+                </div>
+
+                <!-- System-Update Karte -->
+                <div class="system-card glass-card">
+                  <div class="system-card-header">
+                    <div class="system-card-icon" style="background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.2);">
+                      <svg style="fill: #6366f1; width: 22px; height: 22px; display: block;"><use href="#icon-cloud-lock"></use></svg>
+                    </div>
+                    <h3>System-Update</h3>
+                  </div>
+                  <p class="system-card-desc">Lädt die neuesten Programmaktualisierungen von GitHub herunter und startet den Cloud-Dienst automatisch neu.</p>
+                  <div class="system-card-action">
+                    <button id="btn-trigger-update" class="btn-primary" style="width: auto; padding: 8px 16px; font-size: 13px;" onclick="triggerWebUpdate()">Jetzt aktualisieren</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -422,6 +462,19 @@
       <div id="preview-body" class="modal-body">
         <!-- Rendered by JS depending on type -->
       </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM UPDATE OVERLAY MODAL (Neu) -->
+  <div id="update-overlay" class="dialog-overlay" style="z-index: 10000; background: rgba(10, 11, 16, 0.95); display: none;">
+    <div class="dialog-content glass-card" style="max-width: 450px; text-align: center; padding: 40px; border-color: rgba(99, 102, 241, 0.25);">
+      <div class="logo-container" style="background: var(--accent-gradient); animation: pulse 2s infinite; box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3); margin: 0 auto 24px auto;">
+        <svg style="width:32px; height:32px; fill:#fff;"><use href="#icon-cloud-lock"></use></svg>
+      </div>
+      <h2 style="margin-bottom: 12px;">System wird aktualisiert</h2>
+      <p class="subtitle" style="margin-bottom: 16px; font-size: 14px;">Der Server lädt die neuesten Dateien von GitHub herunter und startet sich neu.</p>
+      <p class="subtitle" style="font-size: 13px; color: var(--accent-secondary); font-weight: 600; margin-bottom: 24px;">Bitte warte einen Moment, die Seite wird gleich automatisch neu geladen...</p>
+      <div class="spinner"></div>
     </div>
   </div>
 

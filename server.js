@@ -172,7 +172,7 @@ function isSystemOffline() {
 
 // Middleware: Offline check
 app.use((req, res, next) => {
-  const allowedOfflinePaths = ['/api/status', '/api/shutdown', '/api/login'];
+  const allowedOfflinePaths = ['/api/status', '/api/shutdown', '/api/login', '/api/admin/maintenance'];
   if (isSystemOffline() && req.path.startsWith('/api') && !allowedOfflinePaths.includes(req.path)) {
     return res.status(503).json({ error: 'SYSTEM_OFFLINE', message: 'Die Cloud ist vorübergehend offline.' });
   }
@@ -1048,6 +1048,66 @@ app.delete('/api/admin/users/:username', requireAuth, requireAdmin, (req, res) =
     console.error("Benutzer-Lösch-Fehler:", e);
     res.status(500).json({ error: 'Löschen fehlgeschlagen: ' + e.message });
   }
+});
+
+// 15a. Wartungsmodus per Web-Admin umschalten
+app.post('/api/admin/maintenance', requireAuth, requireAdmin, (req, res) => {
+  const { offline } = req.body;
+  if (offline === undefined) {
+    return res.status(400).json({ error: 'Wartungsmodus-Status erforderlich (offline: true/false)' });
+  }
+
+  const flagPath = (process.platform === 'win32' || process.env.NODE_ENV === 'development')
+    ? path.join(__dirname, 'offline.flag')
+    : path.join(CONFIG_DIR, 'offline.flag');
+
+  try {
+    const flagDir = path.dirname(flagPath);
+    if (!fs.existsSync(flagDir)) {
+      fs.mkdirSync(flagDir, { recursive: true });
+    }
+
+    if (offline) {
+      fs.writeFileSync(flagPath, '');
+      console.log("System per Web-Admin OFFLINE geschaltet.");
+      res.json({ success: true, offline: true, message: 'Wartungsmodus aktiviert. Die Cloud ist jetzt offline.' });
+    } else {
+      if (fs.existsSync(flagPath)) {
+        fs.unlinkSync(flagPath);
+      }
+      console.log("System per Web-Admin ONLINE geschaltet.");
+      res.json({ success: true, offline: false, message: 'Wartungsmodus deaktiviert. Die Cloud ist wieder online.' });
+    }
+  } catch (e) {
+    console.error("Fehler beim Ändern des Wartungsmodus:", e);
+    res.status(500).json({ error: 'Status des Wartungsmodus konnte nicht geändert werden: ' + e.message });
+  }
+});
+
+// 15b. System-Update per Web-Admin anstoßen (GitHub Pull + Restart)
+app.post('/api/admin/update', requireAuth, requireAdmin, (req, res) => {
+  console.log("Web-Admin hat ein System-Update gestartet.");
+  
+  // Sofort antworten, damit die HTTP-Verbindung nicht abreißt
+  res.json({ success: true, message: 'Update gestartet. Das System startet gleich neu...' });
+
+  // Update-Skript mit kurzer Verzögerung im Hintergrund ausführen
+  setTimeout(() => {
+    const updateCommand = (process.platform === 'win32' || process.env.NODE_ENV === 'development')
+      ? 'echo "Simuliere Update auf Windows"'
+      : 'sudo /usr/local/bin/pisecurecloud-update';
+
+    exec(updateCommand, (err, stdout, stderr) => {
+      if (err) {
+        console.error("Fehler beim Web-Update:", err);
+        return;
+      }
+      console.log("Web-Update-Ergebnis:", stdout);
+      if (stderr) {
+        console.warn("Web-Update-Warnungen:", stderr);
+      }
+    });
+  }, 1000);
 });
 
 // --- SHARING FUNCTIONALITY API ROUTES ---

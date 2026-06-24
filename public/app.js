@@ -364,6 +364,9 @@ async function handleChangePassword(e) {
 async function loadUsersList() {
   userTableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color: var(--text-muted);">Lade Benutzerliste...</td></tr>';
   
+  // System-Verwaltung Status laden
+  loadSystemStatus();
+
   try {
     const res = await fetch('/api/admin/users');
     const users = await res.json();
@@ -1061,5 +1064,111 @@ async function deleteShare(shareId) {
     }
   } catch (err) {
     showToast('Verbindungsfehler beim Löschen der Freigabe', 'error');
+  }
+}
+
+// --- SYSTEM ADMINISTRATION LOGIC ---
+
+async function loadSystemStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (res.ok) {
+      const data = await res.json();
+      updateMaintenanceUI(data.offline);
+    }
+  } catch (e) {
+    console.error("Fehler beim Laden des Systemstatus:", e);
+  }
+}
+
+function updateMaintenanceUI(offline) {
+  const badge = document.getElementById('maintenance-status-badge');
+  const button = document.getElementById('btn-toggle-maintenance');
+  if (!badge || !button) return;
+
+  if (offline) {
+    badge.innerText = 'Aktiv (Offline)';
+    badge.className = 'status-badge status-offline';
+    button.innerText = 'Wartungsmodus beenden (Online schalten)';
+    button.style.background = 'var(--success)';
+    button.style.borderColor = 'var(--success)';
+  } else {
+    badge.innerText = 'Inaktiv (Online)';
+    badge.className = 'status-badge status-online';
+    button.innerText = 'Wartungsmodus aktivieren';
+    button.style.background = '';
+    button.style.borderColor = '';
+  }
+}
+
+let isTogglingMaintenance = false;
+
+async function toggleMaintenance() {
+  if (isTogglingMaintenance) return;
+  
+  const badge = document.getElementById('maintenance-status-badge');
+  const currentStatus = badge ? badge.innerText.includes('Aktiv') : false;
+  const newStatus = !currentStatus;
+  
+  const confirmMsg = newStatus
+    ? 'Möchtest du den Wartungsmodus aktivieren? Normale Benutzer können dann nicht mehr auf ihre Dateien zugreifen.'
+    : 'Möchtest du den Wartungsmodus beenden und das System wieder online schalten?';
+    
+  if (!confirm(confirmMsg)) return;
+
+  isTogglingMaintenance = true;
+  const button = document.getElementById('btn-toggle-maintenance');
+  if (button) button.innerText = 'Bitte warten...';
+
+  try {
+    const res = await fetch('/api/admin/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offline: newStatus })
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      showToast(data.message);
+      updateMaintenanceUI(data.offline);
+    } else {
+      showToast(data.error || 'Fehler beim Umschalten des Wartungsmodus', 'error');
+      loadSystemStatus();
+    }
+  } catch (e) {
+    showToast('Verbindungsfehler beim Umschalten des Wartungsmodus', 'error');
+    loadSystemStatus();
+  } finally {
+    isTogglingMaintenance = false;
+  }
+}
+
+async function triggerWebUpdate() {
+  if (!confirm('Möchtest du das System jetzt aktualisieren? Das System lädt die neuesten Dateien von GitHub und startet den Dienst neu. Die Verbindung wird kurz unterbrochen.')) {
+    return;
+  }
+
+  const overlay = document.getElementById('update-overlay');
+  if (overlay) overlay.style.display = 'flex';
+
+  try {
+    const res = await fetch('/api/admin/update', { method: 'POST' });
+    const data = await res.json();
+
+    if (res.ok) {
+      showToast(data.message);
+      setTimeout(() => {
+        window.location.reload();
+      }, 8000);
+    } else {
+      showToast(data.error || 'Update failed', 'error');
+      if (overlay) overlay.style.display = 'none';
+    }
+  } catch (e) {
+    // Da der Server neu startet, ist ein Verbindungsabbruch normal
+    console.log("Erwarteter Netzwerkabbruch durch Update-Neustart:", e);
+    setTimeout(() => {
+      window.location.reload();
+    }, 8000);
   }
 }
