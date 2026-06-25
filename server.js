@@ -1733,20 +1733,33 @@ function getOrGenerateAppKey(callback) {
 
 let githubPagesUrl = '';
 function detectGithubPagesUrl() {
-  const { exec } = require('child_process');
-  exec('git remote get-url origin', (err, stdout) => {
-    if (err) {
-      console.warn('[MONITOR] GitHub Pages URL konnte nicht automatisch ermittelt werden:', err.message);
-      return;
+  const gitConfigPaths = [
+    '/home/picloud/quick-meitner/.git/config',
+    path.join(__dirname, '.git/config')
+  ];
+
+  for (const gitConfigPath of gitConfigPaths) {
+    if (fs.existsSync(gitConfigPath)) {
+      try {
+        const configText = fs.readFileSync(gitConfigPath, 'utf8');
+        const match = configText.match(/\[remote\s+"origin"\][^]*?url\s*=\s*(.*)/);
+        if (match) {
+          const remoteUrl = match[1].trim();
+          const githubMatch = remoteUrl.match(/github\.com[:/]([^/]+)\/([^.]+)/);
+          if (githubMatch) {
+            const username = githubMatch[1].toLowerCase();
+            const repo = githubMatch[2].replace(/\.git$/, '').toLowerCase();
+            githubPagesUrl = `https://${username}.github.io/${repo}`;
+            console.log(`[MONITOR] GitHub Pages URL aus Git-Config erkannt: ${githubPagesUrl}`);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[MONITOR] Fehler beim Lesen der Git-Config:', e.message);
+      }
     }
-    const match = stdout.trim().match(/github\.com[:/]([^/]+)\/([^.]+)/);
-    if (match) {
-      const username = match[1].toLowerCase();
-      const repo = match[2].toLowerCase();
-      githubPagesUrl = `https://${username}.github.io/${repo}`;
-      console.log(`[MONITOR] GitHub Pages URL erkannt: ${githubPagesUrl}`);
-    }
-  });
+  }
+  console.warn('[MONITOR] GitHub Pages URL konnte nicht aus Git-Config ermittelt werden.');
 }
 
 // Start Server
