@@ -520,7 +520,7 @@ app.get('/api/status', (req, res) => {
       storageDir,
       role,
       bucketId: config.bucketId,
-      githubPagesUrl: githubPagesUrl,
+      githubPagesUrl: config.customPagesUrl || githubPagesUrl,
       diskSpace: { size, used, available, percent }
     });
   });
