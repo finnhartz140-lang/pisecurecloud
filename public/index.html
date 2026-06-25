@@ -390,14 +390,31 @@
                 <span id="webdav-url-display" style="color: var(--accent-secondary); font-weight: bold;">Lade WebDAV URL...</span>
                 <button class="btn-primary" onclick="copyWebdavUrl()" style="width: auto; padding: 6px 12px; font-size: 11px; margin-left: 12px; flex-shrink: 0;">Kopieren</button>
               </div>
+
+              <!-- Hinweis zur wechselnden URL & Proxy-Download (Neu) -->
+              <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); padding: 16px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+                <h4 style="margin: 0 0 6px 0; font-size: 13px; color: var(--accent-secondary); display: flex; align-items: center; gap: 6px;">
+                  <svg style="fill: currentColor; width: 14px; height: 14px;"><use href="#icon-settings"></use></svg>
+                  Tipp: Dauerhafte Verbindung trotz wechselnder URL
+                </h4>
+                <p style="margin: 0 0 12px 0; font-size: 12px; line-height: 1.5; color: var(--text-muted);">
+                  Da sich die Cloudflare-Adresse deiner Cloud nachts ändert, verliert Windows standardmäßig die Verbindung. Lade dir dieses kleine Proxy-Skript herunter und starte es auf deinem PC. Es leitet alle WebDAV-Anfragen automatisch an die jeweils aktuelle URL weiter!
+                </p>
+                <a href="/api/download-webdav-proxy" class="btn-primary" style="display: inline-flex; align-items: center; justify-content: center; width: auto; padding: 8px 16px; text-decoration: none; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm);">
+                  <svg style="width:14px; height:14px; fill:currentColor; margin-right:6px;"><use href="#icon-download"></use></svg>
+                  Proxy-Skript herunterladen
+                </a>
+              </div>
+
               <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted);">
                 <strong>Anleitung zur Verbindung (Windows):</strong>
                 <ol style="margin: 6px 0 0 16px; padding: 0;">
+                  <li>Starte das heruntergeladene Proxy-Skript auf deinem PC (Befehl: <code>node pisecurecloud-proxy.js</code>).</li>
                   <li>Öffne <strong>Dieser PC</strong> im Windows Explorer.</li>
-                  <li>Klicke oben auf <strong>Netzlaufwerk verbinden</strong> (oder rechtem Mausklick auf "Dieser PC").</li>
-                  <li>Füge die oben kopierte URL in das Feld <em>Ordner</em> ein.</li>
+                  <li>Klicke oben auf <strong>Netzlaufwerk verbinden</strong>.</li>
+                  <li>Gib als Ordner-Adresse ein: <strong style="color: var(--accent-secondary);">http://127.0.0.1:8080/</strong></li>
                   <li>Aktiviere das Kontrollkästchen <strong>Verbindung mit anderen Anmeldedaten herstellen</strong> und klicke auf <em>Fertig stellen</em>.</li>
-                  <li>Gib deinen normalen Cloud-Benutzernamen und dein Passwort ein.</li>
+                  <li>Gib deinen Cloud-Benutzernamen und dein Passwort ein.</li>
                 </ol>
               </div>
             </div>

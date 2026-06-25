@@ -1083,6 +1083,127 @@ app.post('/api/admin/backup/restore', requireAuth, requireAdmin, async (req, res
   }
 });
 
+// Download customized WebDAV Local Proxy Script
+app.get('/api/download-webdav-proxy', (req, res) => {
+  const config = getConfig();
+  if (!config || !config.bucketId) {
+    return res.status(400).send('System ist noch nicht eingerichtet oder Bucket-ID fehlt.');
+  }
+
+  const scriptContent = `// PiSecureCloud WebDAV Local Proxy
+const http = require('http');
+const https = require('https');
+
+const BUCKET_ID = "${config.bucketId}";
+const PORT = 8080;
+
+let currentTargetUrl = "";
+
+function fetchCurrentUrl() {
+  return new Promise((resolve, reject) => {
+    https.get(\`https://keyvalue.immanuel.co/api/KeyVal/GetValue/\${BUCKET_ID}/url\`, (res) => {
+      let data = "";
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json) {
+            const url = Buffer.from(json, 'hex').toString('utf8');
+            resolve(url);
+          } else {
+            reject(new Error("Empty value"));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+async function getTargetUrl(forceRefresh = false) {
+  if (!currentTargetUrl || forceRefresh) {
+    console.log("[PROXY] Rufe aktuelle Tunnel-URL ab...");
+    try {
+      currentTargetUrl = await fetchCurrentUrl();
+      console.log(\`[PROXY] Aktuelle Tunnel-URL: \${currentTargetUrl}\`);
+    } catch (e) {
+      console.error("[PROXY] Fehler beim Abrufen der URL:", e.message);
+    }
+  }
+  return currentTargetUrl;
+}
+
+const server = http.createServer(async (req, res) => {
+  console.log(\`[PROXY] \${req.method} \${req.url}\`);
+  
+  let targetUrlStr = await getTargetUrl();
+  if (!targetUrlStr) {
+    res.statusCode = 502;
+    res.end("Bad Gateway: Cloud Tunnel-URL konnte nicht ermittelt werden.");
+    return;
+  }
+
+  function doRequest(retryCount = 0) {
+    try {
+      const targetUrl = new URL(targetUrlStr);
+      const options = {
+        hostname: targetUrl.hostname,
+        port: 443,
+        path: req.url,
+        method: req.method,
+        headers: {
+          ...req.headers,
+          host: targetUrl.hostname
+        }
+      };
+
+      const proxyReq = https.request(options, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', async (err) => {
+        console.error(\`[PROXY] Verbindungsfehler (Versuch \${retryCount + 1}):\`, err.message);
+        if (retryCount < 2) {
+          targetUrlStr = await getTargetUrl(true);
+          if (targetUrlStr) {
+            doRequest(retryCount + 1);
+            return;
+          }
+        }
+        res.statusCode = 502;
+        res.end("Bad Gateway: Verbindung zum Cloud-Server fehlgeschlagen.");
+      });
+
+      req.pipe(proxyReq);
+    } catch (err) {
+      console.error("[PROXY] Request Fehler:", err.message);
+      res.statusCode = 500;
+      res.end("Internal Server Error in Proxy");
+    }
+  }
+
+  doRequest();
+});
+
+server.listen(PORT, '127.0.0.1', async () => {
+  console.log(\`====================================================\`);
+  console.log(\`   PiSecureCloud - Lokaler WebDAV Proxy gestartet\`);
+  console.log(\`====================================================\`);
+  console.log(\`   Lokaler Port: http://127.0.0.1:\${PORT}\`);
+  console.log(\`   Binde dein Netzlaufwerk in Windows Explorer an:\`);
+  console.log(\`   http://127.0.0.1:\${PORT}/\`);
+  console.log(\`====================================================\`);
+  await getTargetUrl();
+});
+`;
+
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Content-Disposition', 'attachment; filename="pisecurecloud-proxy.js"');
+  res.send(scriptContent);
+});
+
 // --- WEBDAV BACKEND ROUTER ---
 
 function getMimeType(filename) {
