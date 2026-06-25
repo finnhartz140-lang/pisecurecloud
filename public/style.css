@@ -1348,6 +1348,66 @@ svg.svg-icon.pdf {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* --- Hardware Monitor Styles --- */
+.hardware-stats-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  font-size: 13px;
+}
 
+.hardware-stat-item {
+  display: flex;
+  flex-direction: column;
+}
 
+.hardware-stat-label-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
 
+.hardware-stat-value {
+  font-weight: 600;
+}
+
+.hardware-progress-bg {
+  background: rgba(255, 255, 255, 0.05);
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hardware-progress-fill {
+  background: var(--accent-gradient);
+  width: 0%;
+  height: 100%;
+  transition: width 0.5s ease-out;
+}
+
+.hardware-grid-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-glass);
+  padding-top: 14px;
+}
+
+.hardware-grid-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.hardware-grid-label {
+  color: var(--text-muted);
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.hardware-grid-value {
+  font-size: 14px;
+  font-weight: 600;
+}

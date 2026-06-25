@@ -186,6 +186,8 @@ function switchTab(tabId) {
     return;
   }
   noteHasUnsavedChanges = false;
+  
+  stopHardwarePolling(); // Stoppe Hardware-Polling, wenn Tab gewechselt wird
 
   // Deaktiviere alle Tabs und Sektionen
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -206,6 +208,7 @@ function switchTab(tabId) {
     loadActivityLog();
     loadBackupSettings();
     loadBackupList();
+    startHardwarePolling(); // Starte Polling im Admin-Tab
   } else if (tabId === 'shares') {
     loadSharesList();
   } else if (tabId === 'notes') {
@@ -1831,5 +1834,87 @@ function copyWebdavUrl() {
     showToast('Kopieren fehlgeschlagen', 'error');
   });
 }
+
+// --- HARDWARE MONITOR LOGIK ---
+let hardwareInterval = null;
+
+function startHardwarePolling() {
+  stopHardwarePolling();
+  loadHardwareStats(); // load immediately
+  hardwareInterval = setInterval(loadHardwareStats, 5000);
+}
+
+function stopHardwarePolling() {
+  if (hardwareInterval) {
+    clearInterval(hardwareInterval);
+    hardwareInterval = null;
+  }
+}
+
+async function loadHardwareStats() {
+  const statCpuLoad = document.getElementById('stat-cpu-load');
+  const progressCpuLoad = document.getElementById('progress-cpu-load');
+  const statRamUsage = document.getElementById('stat-ram-usage');
+  const progressRamUsage = document.getElementById('progress-ram-usage');
+  const statDiskUsage = document.getElementById('stat-disk-usage');
+  const progressDiskUsage = document.getElementById('progress-disk-usage');
+  const statCpuTemp = document.getElementById('stat-cpu-temp');
+  const statUptime = document.getElementById('stat-uptime');
+
+  if (!statCpuLoad) return; // not rendered or tab changed
+
+  try {
+    const res = await fetch('/api/admin/hardware/stats');
+    if (!res.ok) return;
+    const stats = await res.json();
+
+    // 1. CPU Load
+    statCpuLoad.innerText = `${stats.cpuLoad}%`;
+    progressCpuLoad.style.width = `${stats.cpuLoad}%`;
+
+    // 2. RAM Usage
+    if (stats.ram && typeof stats.ram.percent !== 'undefined') {
+      statRamUsage.innerText = `${stats.ram.percent}% (${formatBytes(stats.ram.used, 1)} / ${formatBytes(stats.ram.total, 1)})`;
+      progressRamUsage.style.width = `${stats.ram.percent}%`;
+    }
+
+    // 3. Disk Space
+    if (stats.disk && statDiskUsage && progressDiskUsage) {
+      statDiskUsage.innerText = `${stats.disk.percent} (${stats.disk.used} / ${stats.disk.total})`;
+      progressDiskUsage.style.width = stats.disk.percent;
+    }
+
+    // 4. CPU Temp
+    statCpuTemp.innerText = `${stats.cpuTemp} °C`;
+    if (stats.cpuTemp < 55) {
+      statCpuTemp.style.color = '#10b981'; // Green
+    } else if (stats.cpuTemp < 70) {
+      statCpuTemp.style.color = '#f59e0b'; // Orange
+    } else {
+      statCpuTemp.style.color = '#ef4444'; // Red
+    }
+
+    // 5. Uptime
+    statUptime.innerText = formatUptime(stats.uptime);
+
+  } catch (err) {
+    console.error('Fehler beim Laden des Hardware-Status:', err);
+  }
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / (3600 * 24));
+  const h = Math.floor((seconds % (3600 * 24)) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  
+  if (d > 0) {
+    return `${d}d ${h}h ${m}m`;
+  } else if (h > 0) {
+    return `${h}h ${m}m`;
+  } else {
+    return `${m}m`;
+  }
+}
+
 
 

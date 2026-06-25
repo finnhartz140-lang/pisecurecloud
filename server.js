@@ -8,6 +8,8 @@ const cors = require('cors');
 const { exec } = require('child_process');
 const archiver = require('archiver');
 const { Readable } = require('stream');
+const os = require('os');
+
 const AdmZip = require('adm-zip');
 const fsPromises = fs.promises;
 
@@ -1204,6 +1206,111 @@ server.listen(PORT, '127.0.0.1', async () => {
   res.send(scriptContent);
 });
 
+// --- HARDWARE MONITOR ENGINE & API ---
+
+function getCpuTemp() {
+  if (process.platform === 'win32' || process.env.NODE_ENV === 'development') {
+    return 42 + Math.random() * 8; // dev mock
+  }
+  try {
+    const tempFile = '/sys/class/thermal/thermal_zone0/temp';
+    if (fs.existsSync(tempFile)) {
+      const raw = fs.readFileSync(tempFile, 'utf8');
+      return parseFloat(raw) / 1000.0;
+    }
+  } catch (e) {
+    console.error("Fehler beim Lesen der CPU-Temperatur:", e);
+  }
+  return 0;
+}
+
+function getAverageCpuTimes() {
+  const cpus = os.cpus();
+  let totalIdle = 0, totalTick = 0;
+  
+  if (!cpus || cpus.length === 0) return { idle: 0, total: 0 };
+  
+  cpus.forEach(cpu => {
+    for (const type in cpu.times) {
+      totalTick += cpu.times[type];
+    }
+    totalIdle += cpu.times.idle;
+  });
+  return { idle: totalIdle / cpus.length, total: totalTick / cpus.length };
+}
+
+let lastCpuTimes = getAverageCpuTimes();
+let latestCpuLoad = 0;
+
+function updateCpuLoad() {
+  const startTimes = lastCpuTimes;
+  const endTimes = getAverageCpuTimes();
+  
+  const idleDifference = endTimes.idle - startTimes.idle;
+  const totalDifference = endTimes.total - startTimes.total;
+  
+  if (totalDifference > 0) {
+    const percentage = 100 - (100 * idleDifference / totalDifference);
+    latestCpuLoad = Math.max(0, Math.min(100, Math.round(percentage)));
+  }
+  
+  lastCpuTimes = endTimes;
+}
+
+// Update CPU load stats every 3 seconds
+setInterval(updateCpuLoad, 3000);
+
+function getRamStats() {
+  const total = os.totalmem();
+  const free = os.freemem();
+  const used = total - free;
+  const percent = Math.round((used / total) * 100);
+  return { total, free, used, percent };
+}
+
+app.get('/api/admin/hardware/stats', requireAuth, requireAdmin, (req, res) => {
+  const cpuTemp = getCpuTemp();
+  const ram = getRamStats();
+  const config = getConfig();
+  const storageDir = config ? config.storageDir : '/var/lib/pisecurecloud/storage';
+  
+  if (process.platform === 'win32' || process.env.NODE_ENV === 'development') {
+    return res.json({
+      cpuTemp: parseFloat(cpuTemp.toFixed(1)),
+      cpuLoad: latestCpuLoad,
+      ram: ram,
+      disk: { total: '120G', used: '45G', available: '75G', percent: '38%' },
+      uptime: Math.round(os.uptime())
+    });
+  }
+
+  exec(`df -h "${storageDir}"`, (err, stdout) => {
+    let disk = { total: 'Unbekannt', used: 'Unbekannt', available: 'Unbekannt', percent: '0%' };
+    if (!err) {
+      const lines = stdout.trim().split('\n');
+      if (lines.length > 1) {
+        const parts = lines[1].replace(/\s+/g, ' ').split(' ');
+        if (parts.length >= 5) {
+          disk = {
+            total: parts[1],
+            used: parts[2],
+            available: parts[3],
+            percent: parts[4]
+          };
+        }
+      }
+    }
+    
+    res.json({
+      cpuTemp: parseFloat(cpuTemp.toFixed(1)),
+      cpuLoad: latestCpuLoad,
+      ram: ram,
+      disk: disk,
+      uptime: Math.round(os.uptime())
+    });
+  });
+});
+
 // --- WEBDAV BACKEND ROUTER ---
 
 function getMimeType(filename) {
@@ -1895,6 +2002,28 @@ app.get('/api/status', (req, res) => {
     fs.mkdirSync(storageDir, { recursive: true });
   }
 
+  const sendResponse = (size, used, available, percent) => {
+    let role = 'user';
+    if (req.session && req.session.userId && config.users[req.session.userId]) {
+      role = config.users[req.session.userId].role;
+    }
+    
+    res.json({
+      setupRequired: !hasAdmin,
+      offline,
+      hasAdmin,
+      storageDir,
+      role,
+      bucketId: config.bucketId,
+      githubPagesUrl: config.customPagesUrl || githubPagesUrl,
+      diskSpace: { size, used, available, percent }
+    });
+  };
+
+  if (process.platform === 'win32' || process.env.NODE_ENV === 'development') {
+    return sendResponse('120G', '45G', '75G', '38%');
+  }
+
   exec(`df -h "${storageDir}"`, (err, stdout) => {
     let size = 'Unbekannt';
     let used = 'Unbekannt';
@@ -1914,21 +2043,7 @@ app.get('/api/status', (req, res) => {
       }
     }
     
-    let role = 'user';
-    if (req.session && req.session.userId && config.users[req.session.userId]) {
-      role = config.users[req.session.userId].role;
-    }
-    
-    res.json({
-      setupRequired: !hasAdmin,
-      offline,
-      hasAdmin,
-      storageDir,
-      role,
-      bucketId: config.bucketId,
-      githubPagesUrl: config.customPagesUrl || githubPagesUrl,
-      diskSpace: { size, used, available, percent }
-    });
+    sendResponse(size, used, available, percent);
   });
 });
 
