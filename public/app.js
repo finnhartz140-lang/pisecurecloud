@@ -70,6 +70,34 @@ function formatBytes(bytes, decimals = 2) {
 
 // 1. Check server status (Setup, Offline, or Login required?)
 async function checkStatus() {
+  // Intercept hash-based auto-login from static helper page or desktop shortcut
+  const hash = window.location.hash;
+  if (hash && hash.startsWith('#login=')) {
+    try {
+      const loginPayload = JSON.parse(atob(decodeURIComponent(hash.substring(7))));
+      if (loginPayload.u && loginPayload.p) {
+        // Clear hash instantly to hide credentials
+        history.replaceState("", document.title, window.location.pathname + window.location.search);
+        
+        const loginRes = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: loginPayload.u, password: loginPayload.p })
+        });
+        
+        if (loginRes.ok) {
+          showToast('Automatisch angemeldet');
+          sessionStorage.setItem('username', loginPayload.u);
+          currentUsername = loginPayload.u;
+        } else {
+          showToast('Automatisches Login-Verfahren fehlgeschlagen', 'error');
+        }
+      }
+    } catch (err) {
+      console.error('Auto-login hash parsing error:', err);
+    }
+  }
+
   try {
     const res = await fetch('/api/status');
     const data = await res.json();

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PiSecureCloud - Quick Login</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: var(--bg-main);
+      font-family: 'Outfit', sans-serif;
+    }
+    
+    .login-container {
+      width: 100%;
+      max-width: 450px;
+      padding: 40px;
+      animation: floatIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .status-loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 20px 0;
+    }
+    
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.05);
+      border-top: 4px solid #6366f1;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    .checkbox-group input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    
+    .checkbox-group label {
+      font-size: 14px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .settings-toggle {
+      display: block;
+      text-align: center;
+      margin-top: 20px;
+      color: var(--text-muted);
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    
+    .settings-toggle:hover {
+      color: var(--text-main);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SVGs for Icons -->
+  <svg style="display: none;">
+    <symbol id="icon-cloud-lock" viewBox="0 0 24 24">
+      <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM12 17c-1.1 0-2-.9-2-2v-2c0-1.1.9-2 2-2s2 .9 2 2v2c0 1.1-.9 2-2 2zm1.2-4.2c0-.66-.54-1.2-1.2-1.2s-1.2.54-1.2 1.2v2.4c0 .66.54 1.2 1.2 1.2s1.2-.54 1.2-1.2v-2.4z"/>
+    </symbol>
+  </svg>
+
+  <div class="login-container glass-card">
+    
+    <!-- HEADER -->
+    <div class="logo-container" style="display: flex; justify-content: center; margin-bottom: 24px;">
+      <svg style="width: 60px; height: 60px; fill: #6366f1;"><use href="#icon-cloud-lock"></use></svg>
+    </div>
+    <h1 style="font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 8px;">PiSecureCloud</h1>
+    <p style="color: var(--text-muted); text-align: center; font-size: 14px; margin-bottom: 32px;" id="subtitle-text">
+      Statisches Login-Portal & Verbindungstunnel
+    </p>
+
+    <!-- LOADING / REDIRECTING STATE -->
+    <div id="loader-state" class="status-loader" style="display: none;">
+      <div class="spinner"></div>
+      <p id="loader-msg" style="color: var(--text-main); font-size: 15px; font-weight: 500;">
+        Verbinde mit Cloud...
+      </p>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="form-state">
+      <form id="quick-login-form" onsubmit="handleQuickSubmit(event)">
+        
+        <div class="form-group" id="group-bucket" style="display: none;">
+          <label for="cloud-id">Verbindungs-ID (Bucket ID)</label>
+          <input type="text" id="cloud-id" class="form-control" placeholder="z. B. tefd0ycm">
+        </div>
+
+        <div class="form-group">
+          <label for="login-username">Benutzername</label>
+          <input type="text" id="login-username" class="form-control" placeholder="Benutzername eingeben" required autocomplete="username">
+        </div>
+        
+        <div class="form-group">
+          <label for="login-password">Passwort / Entschlüsselungsschlüssel</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Passwort eingeben" required autocomplete="current-password">
+        </div>
+
+        <div class="checkbox-group" onclick="toggleCheckbox()">
+          <input type="checkbox" id="auto-login" onclick="event.stopPropagation()">
+          <label for="auto-login">Dauerhaft angemeldet bleiben (Auto-Login)</label>
+        </div>
+
+        <button type="submit" class="btn-primary" style="width: 100%;">
+          Verbinden & Anmelden
+        </button>
+
+        <a class="settings-toggle" onclick="toggleSettings()">
+          Verbindungs-Einstellungen anzeigen
+        </a>
+      </form>
+    </div>
+
+    <!-- ERROR VIEW -->
+    <div id="error-state" style="display: none; text-align: center; margin-top: 20px;">
+      <p style="color: var(--danger); font-size: 14px; margin-bottom: 16px;" id="error-msg">
+        Verbindungsfehler.
+      </p>
+      <button class="btn-secondary" onclick="resetToForm()" style="padding: 10px 20px;">
+        Zurück
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    // Constants
+    const STORAGE_KEY_CREDS = 'psc_autologin_creds';
+    const STORAGE_KEY_BUCKET = 'psc_bucket_id';
+
+    // UI elements
+    const loaderState = document.getElementById('loader-state');
+    const formState = document.getElementById('form-state');
+    const errorState = document.getElementById('error-state');
+    const loaderMsg = document.getElementById('loader-msg');
+    const errorMsg = document.getElementById('error-msg');
+    const subtitleText = document.getElementById('subtitle-text');
+
+    const bucketInput = document.getElementById('cloud-id');
+    const usernameInput = document.getElementById('login-username');
+    const passwordInput = document.getElementById('login-password');
+    const autoLoginCheckbox = document.getElementById('auto-login');
+
+    // Parse parameters
+    const params = new URLSearchParams(window.location.search);
+    let bucketId = params.get('b') || localStorage.getItem(STORAGE_KEY_BUCKET) || '';
+
+    // Init
+    function init() {
+      if (bucketId) {
+        bucketInput.value = bucketId;
+        localStorage.setItem(STORAGE_KEY_BUCKET, bucketId);
+      } else {
+        // If no bucket ID is present, we must show the setting field
+        document.getElementById('group-bucket').style.display = 'block';
+      }
+
+      // Check for saved credentials
+      const savedCreds = localStorage.getItem(STORAGE_KEY_CREDS);
+      if (savedCreds && bucketId) {
+        try {
+          const creds = JSON.parse(atob(savedCreds));
+          if (creds.u && creds.p) {
+            // Auto-login
+            performAutoLogin(creds.u, creds.p);
+            return;
+          }
+        } catch (e) {
+          localStorage.removeItem(STORAGE_KEY_CREDS);
+        }
+      }
+
+      // Fill in username if saved previously (standard UX)
+      if (savedCreds) {
+        try {
+          const creds = JSON.parse(atob(savedCreds));
+          usernameInput.value = creds.u || '';
+        } catch(e) {}
+      }
+    }
+
+    function toggleCheckbox() {
+      autoLoginCheckbox.checked = !autoLoginCheckbox.checked;
+    }
+
+    function toggleSettings() {
+      const el = document.getElementById('group-bucket');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function showStatus(msg) {
+      formState.style.display = 'none';
+      errorState.style.display = 'none';
+      loaderState.style.display = 'flex';
+      loaderMsg.innerText = msg;
+    }
+
+    function showError(msg) {
+      formState.style.display = 'none';
+      loaderState.style.display = 'none';
+      errorState.style.display = 'block';
+      errorMsg.innerText = msg;
+    }
+
+    function resetToForm() {
+      loaderState.style.display = 'none';
+      errorState.style.display = 'none';
+      formState.style.display = 'block';
+    }
+
+    function decodeHex(hex) {
+      let str = '';
+      for (let i = 0; i < hex.length; i += 2) {
+        str += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
+      }
+      return str;
+    }
+
+    // Resolve URL from immanuel.co and redirect with credentials hash
+    function performAutoLogin(username, password) {
+      showStatus('Rufe aktuelle Cloud-Adresse ab...');
+
+      if (!bucketId) {
+        showError('Bitte gib eine Verbindungs-ID (Bucket ID) an.');
+        return;
+      }
+
+      fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${bucketId}/url`)
+        .then(res => {
+          if (!res.ok) throw new Error("Verbindung zum URL-Server fehlgeschlagen.");
+          return res.json();
+        })
+        .then(hexData => {
+          if (!hexData) throw new Error("Cloud-Adresse konnte nicht geladen werden. Ist der Pi online?");
+          const cloudUrl = decodeHex(hexData.trim());
+          if (cloudUrl.startsWith('https://')) {
+            showStatus('Verbinde mit Cloud...');
+            
+            // Build login hash payload: base64 encoded JSON
+            const loginPayload = btoa(JSON.stringify({ u: username, p: password }));
+            
+            // Redirect using location.replace to clear historical entry
+            window.location.replace(`${cloudUrl}/#login=${loginPayload}`);
+          } else {
+            throw new Error("Ungültige Cloud-Adresse empfangen: " + cloudUrl);
+          }
+        })
+        .catch(err => {
+          showError(err.message || 'Verbindung zum Raspberry Pi fehlgeschlagen. Bitte prüfe, ob dein Pi läuft.');
+        });
+    }
+
+    function handleQuickSubmit(e) {
+      e.preventDefault();
+      
+      const bid = bucketInput.value.trim();
+      const user = usernameInput.value.trim();
+      const pass = passwordInput.value;
+
+      if (!bid) {
+        alert('Bitte gib die Verbindungs-ID (Bucket ID) ein.');
+        return;
+      }
+
+      bucketId = bid;
+      localStorage.setItem(STORAGE_KEY_BUCKET, bid);
+
+      if (autoLoginCheckbox.checked) {
+        const payload = btoa(JSON.stringify({ u: user, p: pass }));
+        localStorage.setItem(STORAGE_KEY_CREDS, payload);
+      } else {
+        localStorage.removeItem(STORAGE_KEY_CREDS);
+      }
+
+      performAutoLogin(user, pass);
+    }
+
+    // Run init
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

@@ -1585,24 +1585,154 @@ app.get('/api/download-shortcut', (req, res) => {
   }
 
   const htmlContent = `<!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-  <meta charset="utf-8">
-  <title>Verbinde mit PiSecureCloud...</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PiSecureCloud - Quick Login</title>
   <style>
+    :root {
+      --bg-primary: #0a0b10;
+      --bg-secondary: #131520;
+      --bg-glass: rgba(25, 28, 45, 0.45);
+      --border-glass: rgba(255, 255, 255, 0.08);
+      --accent-primary: #6366f1;
+      --accent-secondary: #06b6d4;
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --danger: #ef4444;
+      --success: #10b981;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
     body {
-      background: #0f1015;
-      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
       font-family: system-ui, -apple-system, sans-serif;
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(6, 118, 212, 0.15) 0%, transparent 40%);
+      background-attachment: fixed;
+    }
+    
+    .glass-card {
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+    
+    .login-container {
+      width: 100%;
+      max-width: 450px;
+      padding: 40px;
+      animation: floatIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    @keyframes floatIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .logo-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }
+    
+    .form-group label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 15px;
+      transition: 0.2s;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    
+    .btn-primary {
+      width: 100%;
+      padding: 12px 24px;
+      background: var(--accent-gradient);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.3);
+    }
+    
+    .btn-secondary {
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .status-loader {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
+      margin: 20px 0;
     }
-    .loader {
-      border: 4px solid rgba(255,255,255,0.05);
+    
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.05);
       border-top: 4px solid #6366f1;
       border-radius: 50%;
       width: 40px;
@@ -1610,15 +1740,157 @@ app.get('/api/download-shortcut', (req, res) => {
       animation: spin 1s linear infinite;
       margin-bottom: 20px;
     }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+      cursor: pointer;
+      user-select: none;
+      text-align: left;
+    }
+    
+    .checkbox-group input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    
+    .checkbox-group label {
+      font-size: 14px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
-  <div class="loader"></div>
-  <p>Lese aktuelle Cloud-Adresse ab...</p>
-  <script>
-    const BUCKET_ID = "${config.bucketId}";
+
+  <!-- SVGs for Icons -->
+  <svg style="display: none;">
+    <symbol id="icon-cloud-lock" viewBox="0 0 24 24">
+      <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM12 17c-1.1 0-2-.9-2-2v-2c0-1.1.9-2 2-2s2 .9 2 2v2c0 1.1-.9 2-2 2zm1.2-4.2c0-.66-.54-1.2-1.2-1.2s-1.2.54-1.2 1.2v2.4c0 .66.54 1.2 1.2 1.2s1.2-.54 1.2-1.2v-2.4z"/>
+    </symbol>
+  </svg>
+
+  <div class="login-container glass-card">
     
+    <!-- HEADER -->
+    <div class="logo-container">
+      <svg style="width: 60px; height: 60px; fill: #6366f1;"><use href="#icon-cloud-lock"></use></svg>
+    </div>
+    <h1 style="font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 8px;">PiSecureCloud</h1>
+    <p style="color: var(--text-muted); text-align: center; font-size: 14px; margin-bottom: 32px;">
+      Desktop-Verbindungstunnel & Login
+    </p>
+
+    <!-- LOADING / REDIRECTING STATE -->
+    <div id="loader-state" class="status-loader" style="display: none;">
+      <div class="spinner"></div>
+      <p id="loader-msg" style="color: var(--text-main); font-size: 15px; font-weight: 500;">
+        Verbinde mit Cloud...
+      </p>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="form-state">
+      <form id="quick-login-form" onsubmit="handleQuickSubmit(event)">
+        
+        <div class="form-group">
+          <label for="login-username">Benutzername</label>
+          <input type="text" id="login-username" class="form-control" placeholder="Benutzername eingeben" required autocomplete="username">
+        </div>
+        
+        <div class="form-group">
+          <label for="login-password">Passwort / Entschlüsselungsschlüssel</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Passwort eingeben" required autocomplete="current-password">
+        </div>
+
+        <div class="checkbox-group" onclick="toggleCheckbox()">
+          <input type="checkbox" id="auto-login" onclick="event.stopPropagation()">
+          <label for="auto-login">Dauerhaft angemeldet bleiben (Auto-Login)</label>
+        </div>
+
+        <button type="submit" class="btn-primary" style="width: 100%;">
+          Verbinden & Anmelden
+        </button>
+      </form>
+    </div>
+
+    <!-- ERROR VIEW -->
+    <div id="error-state" style="display: none; text-align: center; margin-top: 20px;">
+      <p style="color: var(--danger); font-size: 14px; margin-bottom: 16px;" id="error-msg">
+        Verbindungsfehler.
+      </p>
+      <button class="btn-secondary" onclick="resetToForm()" style="padding: 10px 20px;">
+        Zurück
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    // Config from Server
+    const BUCKET_ID = "${config.bucketId}";
+    const STORAGE_KEY_CREDS = 'psc_autologin_creds';
+
+    // UI elements
+    const loaderState = document.getElementById('loader-state');
+    const formState = document.getElementById('form-state');
+    const errorState = document.getElementById('error-state');
+    const loaderMsg = document.getElementById('loader-msg');
+    const errorMsg = document.getElementById('error-msg');
+
+    const usernameInput = document.getElementById('login-username');
+    const passwordInput = document.getElementById('login-password');
+    const autoLoginCheckbox = document.getElementById('auto-login');
+
+    // Init
+    function init() {
+      // Check for saved credentials
+      const savedCreds = localStorage.getItem(STORAGE_KEY_CREDS);
+      if (savedCreds) {
+        try {
+          const creds = JSON.parse(atob(savedCreds));
+          if (creds.u && creds.p) {
+            performAutoLogin(creds.u, creds.p);
+            return;
+          }
+        } catch (e) {
+          localStorage.removeItem(STORAGE_KEY_CREDS);
+        }
+      }
+    }
+
+    function toggleCheckbox() {
+      autoLoginCheckbox.checked = !autoLoginCheckbox.checked;
+    }
+
+    function showStatus(msg) {
+      formState.style.display = 'none';
+      errorState.style.display = 'none';
+      loaderState.style.display = 'flex';
+      loaderMsg.innerText = msg;
+    }
+
+    function showError(msg) {
+      formState.style.display = 'none';
+      loaderState.style.display = 'none';
+      errorState.style.display = 'block';
+      errorMsg.innerText = msg;
+    }
+
+    function resetToForm() {
+      loaderState.style.display = 'none';
+      errorState.style.display = 'none';
+      formState.style.display = 'block';
+    }
+
     function decodeHex(hex) {
       let str = '';
       for (let i = 0; i < hex.length; i += 2) {
@@ -1627,23 +1899,51 @@ app.get('/api/download-shortcut', (req, res) => {
       return str;
     }
 
-    fetch(\`https://keyvalue.immanuel.co/api/KeyVal/GetValue/\${BUCKET_ID}/url\`)
-      .then(res => {
-        if (!res.ok) throw new Error("Fehler beim Abrufen");
-        return res.json();
-      })
-      .then(hexData => {
-        if (!hexData) throw new Error("Keine Daten vorhanden");
-        const cleanUrl = decodeHex(hexData.trim());
-        if (cleanUrl.startsWith("https://")) {
-          window.location.replace(cleanUrl);
-        } else {
-          document.body.innerHTML = \`<h3>Ung&uuml;ltige URL gefunden:</h3><p>\${cleanUrl}</p>\`;
-        }
-      })
-      .catch(err => {
-        document.body.innerHTML = \`<h3>Verbindung fehlgeschlagen</h3><p>Die URL konnte nicht abgerufen werden. Laeuft der Pi?</p>\`;
-      });
+    function performAutoLogin(username, password) {
+      showStatus('Rufe aktuelle Cloud-Adresse ab...');
+
+      fetch(\`https://keyvalue.immanuel.co/api/KeyVal/GetValue/\${BUCKET_ID}/url\`)
+        .then(res => {
+          if (!res.ok) throw new Error("Verbindung zum URL-Server fehlgeschlagen.");
+          return res.json();
+        })
+        .then(hexData => {
+          if (!hexData) throw new Error("Cloud-Adresse konnte nicht geladen werden. Ist der Pi online?");
+          const cloudUrl = decodeHex(hexData.trim());
+          if (cloudUrl.startsWith('https://')) {
+            showStatus('Verbinde mit Cloud...');
+            
+            // Build login hash payload
+            const loginPayload = btoa(JSON.stringify({ u: username, p: password }));
+            
+            // Redirect using location.replace
+            window.location.replace(\`\${cloudUrl}/#login=\${loginPayload}\`);
+          } else {
+            throw new Error("Ungültige Cloud-Adresse: " + cloudUrl);
+          }
+        })
+        .catch(err => {
+          showError(err.message || 'Verbindung zum Raspberry Pi fehlgeschlagen. Bitte stelle sicher, dass der Pi läuft.');
+        });
+    }
+
+    function handleQuickSubmit(e) {
+      e.preventDefault();
+      
+      const user = usernameInput.value.trim();
+      const pass = passwordInput.value;
+
+      if (autoLoginCheckbox.checked) {
+        const payload = btoa(JSON.stringify({ u: user, p: pass }));
+        localStorage.setItem(STORAGE_KEY_CREDS, payload);
+      } else {
+        localStorage.removeItem(STORAGE_KEY_CREDS);
+      }
+
+      performAutoLogin(user, pass);
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html>`;
