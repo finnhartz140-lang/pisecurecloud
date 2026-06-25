@@ -1612,7 +1612,7 @@ app.get('/api/download-shortcut', (req, res) => {
     function decodeHex(hex) {
       let str = '';
       for (let i = 0; i < hex.length; i += 2) {
-        str += String.fromCharCode(parseInt(hex.substring(i, 2), 16));
+        str += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
       }
       return str;
     }
