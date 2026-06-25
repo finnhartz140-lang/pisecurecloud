@@ -1608,13 +1608,23 @@ app.get('/api/download-shortcut', (req, res) => {
   <p>Lese aktuelle Cloud-Adresse ab...</p>
   <script>
     const BUCKET_ID = "${config.bucketId}";
-    fetch(\`https://kvdb.io/\${BUCKET_ID}/url\`)
+    
+    function decodeHex(hex) {
+      let str = '';
+      for (let i = 0; i < hex.length; i += 2) {
+        str += String.fromCharCode(parseInt(hex.substring(i, 2), 16));
+      }
+      return str;
+    }
+
+    fetch(\`https://keyvalue.immanuel.co/api/KeyVal/GetValue/\${BUCKET_ID}/url\`)
       .then(res => {
         if (!res.ok) throw new Error("Fehler beim Abrufen");
-        return res.text();
+        return res.json();
       })
-      .then(url => {
-        const cleanUrl = url.trim();
+      .then(hexData => {
+        if (!hexData) throw new Error("Keine Daten vorhanden");
+        const cleanUrl = decodeHex(hexData.trim());
         if (cleanUrl.startsWith("https://")) {
           window.location.replace(cleanUrl);
         } else {
@@ -1656,18 +1666,23 @@ function startTunnelMonitor() {
           console.log(`[MONITOR] Neue Tunnel-URL erkannt: ${currentUrl}`);
           
           const https = require('https');
-          const req = https.request(`https://kvdb.io/${config.bucketId}/url`, {
+          const hexUrl = Buffer.from(currentUrl).toString('hex');
+          
+          const req = https.request({
+            hostname: 'keyvalue.immanuel.co',
+            port: 443,
+            path: `/api/KeyVal/UpdateValue/${config.bucketId}/url/${hexUrl}`,
             method: 'POST',
             headers: {
-              'Content-Type': 'text/plain'
+              'Content-Length': '0'
             }
           }, (res) => {
             res.on('data', () => {});
+            console.log(`[MONITOR] URL-Tracker-Datenbank aktualisiert. Status: ${res.statusCode}`);
           });
           req.on('error', (e) => {
-            console.error('[MONITOR] Fehler beim Senden an kvdb.io:', e);
+            console.error('[MONITOR] Fehler beim Senden der URL an KeyValue Store:', e);
           });
-          req.write(currentUrl);
           req.end();
 
           lastUrl = currentUrl;
@@ -1679,18 +1694,51 @@ function startTunnelMonitor() {
   }, 10000);
 }
 
+// Function to ensure app-key from immanuel.co exists
+function getOrGenerateAppKey(callback) {
+  const config = getConfig();
+  if (config && config.bucketId && !config.bucketId.startsWith('psc_')) {
+    // We already have a valid Immanuel.co app-key (those don't start with psc_)
+    return callback(config.bucketId);
+  }
+  
+  console.log('[MONITOR] Generiere neuen KeyValue App-Key von immanuel.co...');
+  const https = require('https');
+  https.get('https://keyvalue.immanuel.co/api/KeyVal/GetAppKey', (res) => {
+    let data = '';
+    res.on('data', (chunk) => data += chunk);
+    res.on('end', () => {
+      try {
+        const key = JSON.parse(data).trim();
+        if (key) {
+          config.bucketId = key;
+          saveConfig(config);
+          console.log(`[MONITOR] Neuen KeyValue-Key generiert: ${key}`);
+          callback(key);
+        } else {
+          callback(null);
+        }
+      } catch (e) {
+        console.error('[MONITOR] Fehler beim Parsen des App-Keys:', e);
+        callback(null);
+      }
+    });
+  }).on('error', (e) => {
+    console.error('[MONITOR] Fehler beim Abrufen des App-Keys:', e);
+    callback(null);
+  });
+}
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
 
-  // Ensure bucket ID for URL tracker exists
-  const config = getConfig();
-  if (config && !config.bucketId) {
-    config.bucketId = 'psc_' + crypto.randomBytes(8).toString('hex');
-    saveConfig(config);
-    console.log(`Generierter URL-Tracker-Bucket: ${config.bucketId}`);
-  }
-
-  // Start background log monitor
-  startTunnelMonitor();
+  // Ensure key value store app-key exists, then start monitor
+  getOrGenerateAppKey((key) => {
+    if (key) {
+      startTunnelMonitor();
+    } else {
+      console.error('[MONITOR] Monitor konnte mangels App-Key nicht gestartet werden.');
+    }
+  });
 });
