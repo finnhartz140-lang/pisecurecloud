@@ -8,6 +8,8 @@ let currentShareFileId = ''; // For sharing dialog
 let allNotes = [];
 let activeNoteId = null;
 let noteHasUnsavedChanges = false;
+let appBucketId = '';
+let githubPagesUrl = '';
 
 // DOM Elements
 const setupScreen = document.getElementById('setup-screen');
@@ -87,6 +89,8 @@ async function checkStatus() {
     // Status vorhanden -> Plattenplatz und Rolle aktualisieren
     diskInfo = data.diskSpace;
     currentUserRole = data.role;
+    appBucketId = data.bucketId || '';
+    githubPagesUrl = data.githubPagesUrl || '';
     updateDiskUI();
 
     // Priorität 3: Versuche, Dateiliste zu laden (Prüft, ob Session aktiv ist)
@@ -941,6 +945,17 @@ async function createFileShare() {
       const shareUrl = `${window.location.origin}/share/${data.shareId}#${data.shareKey}`;
       document.getElementById('share-url-output').value = shareUrl;
       
+      const permUrlOutput = document.getElementById('share-perm-url-output');
+      const permUrlContainer = document.getElementById('share-perm-container');
+      
+      if (githubPagesUrl && appBucketId) {
+        const permUrl = `${githubPagesUrl}/share-redirect.html?b=${appBucketId}&id=${data.shareId}#${data.shareKey}`;
+        permUrlOutput.value = permUrl;
+        permUrlContainer.style.display = 'block';
+      } else {
+        permUrlContainer.style.display = 'none';
+      }
+      
       // Store the key in sessionStorage so the user can copy it again during the session
       let sessionKeys = {};
       try {
@@ -960,8 +975,10 @@ async function createFileShare() {
   }
 }
 
-function copyShareUrl() {
-  const output = document.getElementById('share-url-output');
+function copyShareUrl(type) {
+  const elementId = type === 'perm' ? 'share-perm-url-output' : 'share-url-output';
+  const output = document.getElementById(elementId);
+  if (!output) return;
   output.select();
   output.setSelectionRange(0, 99999);
   
@@ -1045,7 +1062,12 @@ function copySpecificShareUrl(shareId) {
   } catch (e) {}
   const cachedKey = sessionKeys[shareId];
   if (cachedKey) {
-    const fullUrl = `${window.location.origin}/share/${shareId}#${cachedKey}`;
+    let fullUrl = '';
+    if (githubPagesUrl && appBucketId) {
+      fullUrl = `${githubPagesUrl}/share-redirect.html?b=${appBucketId}&id=${shareId}#${cachedKey}`;
+    } else {
+      fullUrl = `${window.location.origin}/share/${shareId}#${cachedKey}`;
+    }
     navigator.clipboard.writeText(fullUrl)
       .then(() => {
         showToast('Freigabelink kopiert!');

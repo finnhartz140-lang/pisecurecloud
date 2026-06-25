@@ -519,6 +519,8 @@ app.get('/api/status', (req, res) => {
       hasAdmin,
       storageDir,
       role,
+      bucketId: config.bucketId,
+      githubPagesUrl: githubPagesUrl,
       diskSpace: { size, used, available, percent }
     });
   });
@@ -1729,9 +1731,30 @@ function getOrGenerateAppKey(callback) {
   });
 }
 
+let githubPagesUrl = '';
+function detectGithubPagesUrl() {
+  const { exec } = require('child_process');
+  exec('git remote get-url origin', (err, stdout) => {
+    if (err) {
+      console.warn('[MONITOR] GitHub Pages URL konnte nicht automatisch ermittelt werden:', err.message);
+      return;
+    }
+    const match = stdout.trim().match(/github\.com[:/]([^/]+)\/([^.]+)/);
+    if (match) {
+      const username = match[1].toLowerCase();
+      const repo = match[2].toLowerCase();
+      githubPagesUrl = `https://${username}.github.io/${repo}`;
+      console.log(`[MONITOR] GitHub Pages URL erkannt: ${githubPagesUrl}`);
+    }
+  });
+}
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
+
+  // Auto-detect GitHub Pages URL
+  detectGithubPagesUrl();
 
   // Ensure key value store app-key exists, then start monitor
   getOrGenerateAppKey((key) => {

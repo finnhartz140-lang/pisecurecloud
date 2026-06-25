@@ -515,16 +515,30 @@
       </div>
       
       <div id="share-result-view" style="display: none;">
-        <div class="form-group">
-          <label>Öffentlicher Link (mit Verschlüsselungsschlüssel)</label>
+        <!-- Dauerhafter Link -->
+        <div id="share-perm-container" class="form-group" style="margin-bottom: 20px; display: none;">
+          <label>Dauerhafter Link (über GitHub Pages)</label>
           <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <input type="text" id="share-url-output" class="form-control" readonly style="font-size: 13px;">
-            <button class="btn-primary" style="width: auto; padding: 10px 16px; white-space:nowrap;" onclick="copyShareUrl()">Kopieren</button>
+            <input type="text" id="share-perm-url-output" class="form-control" readonly style="font-size: 13px;">
+            <button class="btn-primary" style="width: auto; padding: 10px 16px; white-space:nowrap;" onclick="copyShareUrl('perm')">Kopieren</button>
           </div>
-          <p class="subtitle" style="font-size: 11px; margin-top: 8px; color: #f59e0b;">
-            ⚠️ Wichtig: Dieser Link enthält am Ende (nach dem #) den Sicherheitsschlüssel zum Entschlüsseln der Datei. Teile ihn nur mit Personen, denen du vertraust!
+          <p class="subtitle" style="font-size: 11px; margin-top: 4px; color: var(--text-muted);">
+            Dieser Link bleibt immer gültig, da er automatisch nach der neuesten Cloud-Adresse sucht.
           </p>
         </div>
+
+        <!-- Direkter Link -->
+        <div class="form-group">
+          <label>Direkter Link (nur bei aktueller Domain gültig)</label>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <input type="text" id="share-url-output" class="form-control" readonly style="font-size: 13px;">
+            <button class="btn-primary" style="width: auto; padding: 10px 16px; white-space:nowrap;" onclick="copyShareUrl('direct')">Kopieren</button>
+          </div>
+        </div>
+
+        <p class="subtitle" style="font-size: 11px; margin-top: 16px; color: #f59e0b;">
+          ⚠️ Wichtig: Diese Links enthalten nach dem # den Sicherheitsschlüssel zum Entschlüsseln der Datei. Teile sie nur mit Personen, denen du vertraust!
+        </p>
         <div class="dialog-buttons" style="margin-top: 24px;">
           <button class="btn-primary" style="width: 100%;" onclick="closeShareDialog()">Fertig</button>
         </div>
