@@ -6,6 +6,8 @@ const path = require('path');
 const crypto = require('crypto');
 const cors = require('cors');
 const { exec } = require('child_process');
+const archiver = require('archiver');
+const { Readable } = require('stream');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -239,6 +241,114 @@ function deriveKey(password) {
 function hashPassword(password, salt) {
   const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512');
   return hash.toString('hex');
+}
+
+// Helper: Erstelle einen entschlüsselten Lesestream (on-the-fly) für ZIP-Streaming
+function createDecryptedStream(encryptedFilePath, plainFileSize, key) {
+  if (plainFileSize === 0) {
+    return new Readable({
+      read() {
+        this.push(null);
+      }
+    });
+  }
+
+  let currentChunkIdx = 0;
+  const numChunks = Math.ceil(plainFileSize / CHUNK_SIZE);
+  let fd;
+  try {
+    fd = fs.openSync(encryptedFilePath, 'r');
+  } catch (err) {
+    return new Readable({
+      read() {
+        this.destroy(err);
+      }
+    });
+  }
+
+  const stat = fs.statSync(encryptedFilePath);
+  const encFileSize = stat.size;
+
+  return new Readable({
+    read(size) {
+      if (currentChunkIdx >= numChunks) {
+        try { fs.closeSync(fd); } catch (e) {}
+        this.push(null);
+        return;
+      }
+
+      try {
+        const chunkDiskOffset = currentChunkIdx * (CHUNK_SIZE + 32);
+        let chunkEncSize = CHUNK_SIZE + 32;
+        if (currentChunkIdx === numChunks - 1) {
+          chunkEncSize = encFileSize - chunkDiskOffset;
+        }
+
+        const chunkBuffer = Buffer.alloc(chunkEncSize);
+        fs.readSync(fd, chunkBuffer, 0, chunkEncSize, chunkDiskOffset);
+
+        const iv = chunkBuffer.subarray(4, 16);
+        const tag = chunkBuffer.subarray(16, 32);
+        const ciphertext = chunkBuffer.subarray(32);
+
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+        const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+
+        this.push(decrypted);
+        currentChunkIdx++;
+      } catch (err) {
+        try { fs.closeSync(fd); } catch (e) {}
+        this.destroy(err);
+      }
+    },
+    destroy(err, callback) {
+      try { fs.closeSync(fd); } catch (e) {}
+      if (callback) callback(err);
+    }
+  });
+}
+
+// Helper: Rekursive Auflistung von Dateien in Ordnern für ZIP-Erstellung
+function getFolderFilesRecursive(metadata, folderId, currentRelativePath = '') {
+  let files = [];
+  const items = metadata.filter(item => item.parentId === folderId);
+
+  for (const item of items) {
+    const itemPath = currentRelativePath ? `${currentRelativePath}/${item.name}` : item.name;
+    if (item.type === 'dir') {
+      files = files.concat(getFolderFilesRecursive(metadata, item.id, itemPath));
+    } else {
+      files.push({
+        metadata: item,
+        zipPath: itemPath
+      });
+    }
+  }
+
+  return files;
+}
+
+// Helper: Kompiliere Dateiliste für ZIP-Download
+function compileZipFileList(metadata, itemIds) {
+  let fileList = [];
+  
+  for (const id of itemIds) {
+    const item = metadata.find(i => i.id === id);
+    if (!item) continue;
+    
+    if (item.type === 'dir') {
+      const folderFiles = getFolderFilesRecursive(metadata, item.id, item.name);
+      fileList = fileList.concat(folderFiles);
+    } else {
+      fileList.push({
+        metadata: item,
+        zipPath: item.name
+      });
+    }
+  }
+  
+  return fileList;
 }
 
 // User-spezifischer Speicherpfad (Unterordner auf der externen Festplatte)
@@ -728,7 +838,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
     return res.status(400).json({ error: 'Keine Datei hochgeladen' });
   }
 
-  const { parentId } = req.body;
+  const { parentId, relativePath } = req.body;
   const config = getConfig();
   const username = req.session.userId;
   const key = Buffer.from(req.session.encryptionKey, 'hex');
@@ -744,11 +854,39 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
     fs.unlinkSync(req.file.path);
 
     const metadata = loadMetadata(config.storageDir, username, key);
+
+    // Resolve directory hierarchy if relativePath is present (folder upload)
+    let targetParentId = parentId || 'root';
+    if (relativePath) {
+      const parts = relativePath.split('/').filter(p => p.trim() !== '');
+      if (parts.length > 1) {
+        // Remove the filename itself
+        parts.pop();
+        
+        // Traverse and create directories recursively
+        for (const dirName of parts) {
+          let dir = metadata.find(item => item.type === 'dir' && item.name === dirName && item.parentId === targetParentId);
+          if (!dir) {
+            dir = {
+              id: crypto.randomUUID(),
+              name: dirName,
+              type: 'dir',
+              parentId: targetParentId,
+              created: new Date().toISOString()
+            };
+            metadata.push(dir);
+            logActivity(username, 'Ordnererstellung', `Ordner '${dirName}' automatisch erstellt bei Pfad-Upload`);
+          }
+          targetParentId = dir.id;
+        }
+      }
+    }
+
     const newFile = {
       id: fileId,
       name: req.file.originalname,
       type: 'file',
-      parentId: parentId || 'root',
+      parentId: targetParentId,
       size: req.file.size,
       mimeType: req.file.mimetype || 'application/octet-stream',
       diskPath: encryptedFileName,
@@ -869,6 +1007,67 @@ app.get('/api/download/:id', requireAuth, (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Herunterladen oder Entschlüsseln fehlgeschlagen' });
     }
+  }
+});
+
+// 9b. ZIP-Download für Ordner oder mehrere Dateien (on-the-fly Entschlüsselung)
+app.post('/api/download-zip', requireAuth, (req, res) => {
+  const config = getConfig();
+  const username = req.session.userId;
+  const key = Buffer.from(req.session.encryptionKey, 'hex');
+
+  let ids;
+  try {
+    ids = JSON.parse(req.body.ids);
+  } catch (e) {
+    return res.status(400).send('Ungültige Parameter');
+  }
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).send('Keine Dateien ausgewählt');
+  }
+
+  try {
+    const metadata = loadMetadata(config.storageDir, username, key);
+    const filesToZip = compileZipFileList(metadata, ids);
+
+    if (filesToZip.length === 0) {
+      return res.status(404).send('Keine Dateien zum Herunterladen gefunden');
+    }
+
+    let zipName = 'pi-cloud-download.zip';
+    if (ids.length === 1) {
+      const singleItem = metadata.find(i => i.id === ids[0]);
+      if (singleItem) {
+        zipName = `${singleItem.name}.zip`;
+      }
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipName)}"`);
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    archive.on('error', (err) => {
+      console.error('ZIP archive error:', err);
+    });
+
+    archive.pipe(res);
+
+    const userStorageDir = getUserStorageDir(config.storageDir, username);
+
+    for (const item of filesToZip) {
+      const encryptedFilePath = path.join(userStorageDir, item.metadata.diskPath);
+      if (fs.existsSync(encryptedFilePath)) {
+        const fileStream = createDecryptedStream(encryptedFilePath, item.metadata.size, key);
+        archive.append(fileStream, { name: item.zipPath });
+      }
+    }
+
+    archive.finalize();
+  } catch (err) {
+    console.error('Fehler beim ZIP-Download:', err);
+    res.status(500).send('Fehler bei der ZIP-Erstellung: ' + err.message);
   }
 });
 

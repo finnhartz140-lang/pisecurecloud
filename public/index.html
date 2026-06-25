@@ -256,11 +256,16 @@
                 <svg style="width:18px; height:18px; fill:currentColor;"><use href="#icon-upload"></use></svg>
                 Datei hochladen
               </button>
+              <button class="btn-action" onclick="triggerFolderUpload()">
+                <svg style="width:18px; height:18px; fill:currentColor;"><use href="#icon-folder"></use></svg>
+                Ordner hochladen
+              </button>
               <button class="btn-action" onclick="openNewFolderDialog()">
                 <svg style="width:18px; height:18px; fill:currentColor;"><use href="#icon-folder"></use></svg>
                 Neuer Ordner
               </button>
               <input type="file" id="file-input" style="display: none;" multiple onchange="handleFileSelect(event)">
+              <input type="file" id="folder-input" style="display: none;" webkitdirectory directory multiple onchange="handleFolderSelect(event)">
             </div>
           </div>
 

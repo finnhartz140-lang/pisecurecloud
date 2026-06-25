@@ -20,6 +20,7 @@ const dashboard = document.getElementById('dashboard');
 const fileGrid = document.getElementById('file-grid');
 const breadcrumbsList = document.getElementById('breadcrumbs');
 const fileInput = document.getElementById('file-input');
+const folderInput = document.getElementById('folder-input');
 const uploadPanel = document.getElementById('upload-panel');
 const uploadList = document.getElementById('upload-list');
 const uploadCount = document.getElementById('upload-panel-count');
@@ -631,7 +632,11 @@ function renderExplorer() {
           <button class="btn-item-action download" title="Herunterladen" onclick="downloadFile('${item.id}', '${item.name}', event)">
             <svg><use href="#icon-download"></use></svg>
           </button>
-        ` : ''}
+        ` : `
+          <button class="btn-item-action download" title="Als ZIP herunterladen" onclick="downloadFolderAsZip('${item.id}', '${item.name}', event)">
+            <svg><use href="#icon-download"></use></svg>
+          </button>
+        `}
         <button class="btn-item-action delete" title="Löschen" onclick="deleteItem('${item.id}', '${item.name}', event)">
           <svg><use href="#icon-delete"></use></svg>
         </button>
@@ -746,11 +751,23 @@ function triggerFileUpload() {
   fileInput.click();
 }
 
+function triggerFolderUpload() {
+  folderInput.click();
+}
+
 function handleFileSelect(e) {
   const files = e.target.files;
   if (files.length > 0) {
     uploadFiles(Array.from(files));
     fileInput.value = '';
+  }
+}
+
+function handleFolderSelect(e) {
+  const files = e.target.files;
+  if (files.length > 0) {
+    uploadFiles(Array.from(files));
+    folderInput.value = '';
   }
 }
 
@@ -765,13 +782,93 @@ function handleDragLeave(e) {
   fileGrid.classList.remove('dragover');
 }
 
-function handleDrop(e) {
+// Helper: Rekursive Ordner-Traversierung bei Drag & Drop
+async function traverseFileTree(entry, path = '') {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file((file) => {
+        // Setze relativen Pfad als Eigenschaft fest
+        Object.defineProperty(file, 'webkitRelativePath', {
+          value: path ? `${path}/${file.name}` : file.name,
+          writable: false,
+          configurable: true
+        });
+        resolve([file]);
+      }, () => resolve([]));
+    } else if (entry.isDirectory) {
+      const dirReader = entry.createReader();
+      const allFiles = [];
+      const readEntries = () => {
+        dirReader.readEntries(async (entries) => {
+          if (entries.length === 0) {
+            resolve(allFiles);
+          } else {
+            const entryPromises = entries.map(e => 
+              traverseFileTree(e, path ? `${path}/${entry.name}` : entry.name)
+            );
+            const results = await Promise.all(entryPromises);
+            allFiles.push(...results.flat());
+            readEntries(); // Lies weiter für den Fall von Paginierung
+          }
+        }, () => resolve(allFiles));
+      };
+      readEntries();
+    } else {
+      resolve([]);
+    }
+  });
+}
+
+async function handleDrop(e) {
   e.preventDefault();
   fileGrid.classList.remove('dragover');
-  const files = e.dataTransfer.files;
-  if (files.length > 0) {
-    uploadFiles(Array.from(files));
+  
+  const items = e.dataTransfer.items;
+  if (!items || items.length === 0) return;
+
+  const filePromises = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'file') {
+      const entry = item.webkitGetAsEntry();
+      if (entry) {
+        filePromises.push(traverseFileTree(entry));
+      }
+    }
   }
+
+  try {
+    const results = await Promise.all(filePromises);
+    const flatFilesList = results.flat();
+    if (flatFilesList.length > 0) {
+      uploadFiles(flatFilesList);
+    }
+  } catch (err) {
+    console.error('Fehler beim Drag & Drop Upload:', err);
+    showToast('Einige Dateien konnten nicht eingelesen werden.', 'error');
+  }
+}
+
+// ZIP-Download Trigger für Ordner
+function downloadFolderAsZip(folderId, folderName, event) {
+  if (event) event.stopPropagation();
+
+  showToast(`ZIP-Erstellung für "${folderName}" gestartet...`);
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/api/download-zip';
+  form.style.display = 'none';
+
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'ids';
+  input.value = JSON.stringify([folderId]);
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
 }
 
 // Upload file list with progressive UI panels
@@ -795,6 +892,11 @@ function uploadFiles(files) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('parentId', currentFolderId);
+    
+    // Sende relativen Pfad für automatische Ordnererstellung
+    if (file.webkitRelativePath) {
+      formData.append('relativePath', file.webkitRelativePath);
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload', true);
