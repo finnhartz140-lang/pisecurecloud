@@ -165,11 +165,25 @@ function showScreen(screen) {
 
   if (screen === 'setup') setupScreen.style.display = 'block';
   if (screen === 'login') loginScreen.style.display = 'block';
-  if (screen === 'register') registerScreen.style.display = 'block';
+  if (screen === 'register') {
+    registerScreen.style.display = 'block';
+    refreshCaptcha();
+  }
   if (screen === 'offline') offlineScreen.style.display = 'block';
   if (screen === 'dashboard') {
     dashboard.style.display = 'flex';
     updateDiskUI();
+  }
+}
+
+function refreshCaptcha() {
+  const img = document.getElementById('captcha-img');
+  if (img) {
+    img.src = '/api/captcha?t=' + Date.now();
+  }
+  const input = document.getElementById('register-captcha');
+  if (input) {
+    input.value = '';
   }
 }
 
@@ -296,6 +310,7 @@ async function handleRegister(e) {
   const username = document.getElementById('register-username').value;
   const password = document.getElementById('register-password').value;
   const confirm = document.getElementById('register-password-confirm').value;
+  const captcha = document.getElementById('register-captcha').value;
 
   if (password !== confirm) {
     showToast('Passwörter stimmen nicht überein', 'error');
@@ -306,7 +321,7 @@ async function handleRegister(e) {
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, captcha })
     });
     const data = await res.json();
 
@@ -316,9 +331,11 @@ async function handleRegister(e) {
       document.getElementById('login-username').value = username;
     } else {
       showToast(data.error || 'Registrierung fehlgeschlagen', 'error');
+      refreshCaptcha();
     }
   } catch (err) {
     showToast('Verbindungsfehler bei der Registrierung', 'error');
+    refreshCaptcha();
   }
 }
 

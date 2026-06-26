@@ -2096,6 +2096,76 @@ app.post('/api/setup', (req, res) => {
   }
 });
 
+// Helper function to generate an SVG mathematical CAPTCHA
+function generateSvgCaptcha() {
+  const num1 = Math.floor(Math.random() * 9) + 1; // 1-9
+  const num2 = Math.floor(Math.random() * 9) + 1; // 1-9
+  const operations = ['+', '-', '*'];
+  const operation = operations[Math.floor(Math.random() * operations.length)];
+  let question = '';
+  let answer = 0;
+  
+  if (operation === '+') {
+    question = `${num1} + ${num2}`;
+    answer = num1 + num2;
+  } else if (operation === '-') {
+    const max = Math.max(num1, num2);
+    const min = Math.min(num1, num2);
+    question = `${max} - ${min}`;
+    answer = max - min;
+  } else {
+    question = `${num1} * ${num2}`;
+    answer = num1 * num2;
+  }
+
+  const width = 150;
+  const height = 50;
+  let noiseLines = '';
+  for (let i = 0; i < 4; i++) {
+    const x1 = Math.floor(Math.random() * width);
+    const y1 = Math.floor(Math.random() * height);
+    const x2 = Math.floor(Math.random() * width);
+    const y2 = Math.floor(Math.random() * height);
+    noiseLines += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" />`;
+  }
+  
+  let noiseDots = '';
+  for (let i = 0; i < 30; i++) {
+    const cx = Math.floor(Math.random() * width);
+    const cy = Math.floor(Math.random() * height);
+    const r = Math.floor(Math.random() * 2) + 1;
+    noiseDots += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(255,255,255,0.2)" />`;
+  }
+
+  const textChars = `${question} = ?`.split('');
+  let textGroup = '';
+  let startX = 15;
+  for (let i = 0; i < textChars.length; i++) {
+    const char = textChars[i];
+    const rotation = Math.floor(Math.random() * 30) - 15; // -15 to 15 degrees
+    const yOffset = Math.floor(Math.random() * 10) - 5; // -5 to 5px
+    const fontSize = Math.floor(Math.random() * 4) + 18; // 18-22px
+    textGroup += `<text x="${startX}" y="${30 + yOffset}" font-family="Segoe UI, sans-serif" font-size="${fontSize}px" font-weight="bold" fill="#ffffff" transform="rotate(${rotation}, ${startX}, ${30 + yOffset})">${char}</text>`;
+    startX += char === ' ' ? 8 : (char === '*' ? 15 : 12);
+  }
+
+  const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.15);">
+    ${noiseLines}
+    ${noiseDots}
+    ${textGroup}
+  </svg>`;
+
+  return { svg, answer };
+}
+
+// 2b. Captcha abrufen
+app.get('/api/captcha', (req, res) => {
+  const captcha = generateSvgCaptcha();
+  req.session.captchaAnswer = captcha.answer;
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.send(captcha.svg);
+});
+
 // 3. Register (Erstellen eines neuen Accounts)
 app.post('/api/register', (req, res) => {
   const config = getConfig();
@@ -2103,7 +2173,19 @@ app.post('/api/register', (req, res) => {
     return res.status(400).json({ error: 'System ist nicht eingerichtet' });
   }
 
-  const { username, password } = req.body;
+  const { username, password, captcha } = req.body;
+  
+  if (req.session.captchaAnswer === undefined) {
+    return res.status(400).json({ error: 'Captcha-Sitzung abgelaufen. Bitte lade die Seite neu.' });
+  }
+
+  if (captcha === undefined || parseInt(captcha) !== req.session.captchaAnswer) {
+    return res.status(400).json({ error: 'Falsches Captcha-Ergebnis. Bitte versuche es erneut.' });
+  }
+
+  // Clear captcha answer so it cannot be reused
+  delete req.session.captchaAnswer;
+
   if (!username || !password) {
     return res.status(400).json({ error: 'Benutzername und Passwort sind erforderlich' });
   }
