@@ -293,6 +293,9 @@ fi
 # 2. Dateien kopieren
 echo "Kopiere Anwendungsdateien nach $APP_DIR..."
 cp "$SRC_DIR/server.js" "$APP_DIR/"
+if [ -f "$SRC_DIR/PiSecureCloud.exe" ]; then
+  cp "$SRC_DIR/PiSecureCloud.exe" "$APP_DIR/"
+fi
 mkdir -p "$APP_DIR/public"
 cp -r "$SRC_DIR/public/"* "$APP_DIR/public/"
 

@@ -3574,6 +3574,38 @@ app.get('/api/download-shortcut', (req, res) => {
 // Windows Desktop-App herunterladen
 app.get('/api/download-windows-app', (req, res) => {
   const appPath = path.join(__dirname, 'PiSecureCloud.exe');
+  
+  // Selbstheilung: Falls die .exe im App-Verzeichnis fehlt, suche im Git-Quellordner danach
+  if (!fs.existsSync(appPath)) {
+    const searchDirs = [
+      '/home/picloud/quick-meitner',
+      '/home/pi/quick-meitner',
+      '/home/admin/quick-meitner',
+      '/root/quick-meitner'
+    ];
+    try {
+      if (fs.existsSync('/home')) {
+        const users = fs.readdirSync('/home');
+        for (const user of users) {
+          searchDirs.push(path.join('/home', user, 'quick-meitner'));
+        }
+      }
+    } catch (e) {}
+
+    for (const sDir of searchDirs) {
+      const candidate = path.join(sDir, 'PiSecureCloud.exe');
+      if (fs.existsSync(candidate)) {
+        try {
+          fs.copyFileSync(candidate, appPath);
+          console.log(`[SELF-HEALING] PiSecureCloud.exe von ${candidate} nach ${appPath} kopiert.`);
+          break;
+        } catch (copyErr) {
+          console.error(`[SELF-HEALING] Fehler beim Kopieren von ${candidate}:`, copyErr);
+        }
+      }
+    }
+  }
+
   if (fs.existsSync(appPath)) {
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', 'attachment; filename="PiSecureCloud.exe"');
