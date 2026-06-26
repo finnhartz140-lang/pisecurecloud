@@ -1022,7 +1022,7 @@ async function openPreview(file) {
       `;
     } 
     else if (ext === 'pdf' || mime === 'application/pdf') {
-      previewBody.innerHTML = `<iframe src="${fileUrl}" style="width:100%; height:100%; border:none;"></iframe>`;
+      previewBody.innerHTML = `<iframe src="${fileUrl}?inline=true" style="width:100%; height:100%; border:none; background: #ffffff;"></iframe>`;
     } 
     else if (['txt', 'md', 'js', 'css', 'html', 'json', 'log', 'sh', 'py'].includes(ext) || mime.startsWith('text/')) {
       const response = await fetch(fileUrl);
