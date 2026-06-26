@@ -1823,12 +1823,29 @@ function updateWebdavUI() {
   if (display) {
     display.innerText = window.location.origin + '/webdav';
   }
+  const androidDisplay = document.getElementById('android-bucket-display');
+  if (androidDisplay) {
+    androidDisplay.innerText = appBucketId || 'Nicht verfügbar (Bucket-ID fehlt)';
+  }
 }
 
 function copyWebdavUrl() {
   const url = window.location.origin + '/webdav';
   navigator.clipboard.writeText(url).then(() => {
     showToast('WebDAV-URL in die Zwischenablage kopiert!', 'success');
+  }).catch(err => {
+    console.error('Kopieren fehlgeschlagen:', err);
+    showToast('Kopieren fehlgeschlagen', 'error');
+  });
+}
+
+function copyAndroidBucketId() {
+  if (!appBucketId) {
+    showToast('Keine Bucket-ID verfügbar!', 'error');
+    return;
+  }
+  navigator.clipboard.writeText(appBucketId).then(() => {
+    showToast('Bucket-ID in die Zwischenablage kopiert!', 'success');
   }).catch(err => {
     console.error('Kopieren fehlgeschlagen:', err);
     showToast('Kopieren fehlgeschlagen', 'error');

@@ -11,7 +11,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.pisecurecloud.network.NetworkClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 @Composable
 fun LoginScreen(onLoginSuccess: () -> Unit) {
@@ -29,6 +35,42 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
+    LaunchedEffect(Unit) {
+        val savedServer = sharedPrefs.getString("server_url", "") ?: ""
+        val savedUser = sharedPrefs.getString("username", "") ?: ""
+        val savedPass = sharedPrefs.getString("password", "") ?: ""
+        
+        if (savedServer.isNotBlank() && savedUser.isNotBlank() && savedPass.isNotBlank()) {
+            isLoading = true
+            errorMessage = "Automatischer Login..."
+            
+            scope.launch {
+                var targetUrl = savedServer.trim()
+                if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+                    errorMessage = "Löse Bucket-ID auf..."
+                    val resolved = resolveBucketUrl(targetUrl)
+                    if (resolved != null) {
+                        targetUrl = resolved
+                    } else {
+                        isLoading = false
+                        errorMessage = "Bucket-ID konnte nicht gelöst werden. Bitte manuell anmelden."
+                        return@launch
+                    }
+                }
+                
+                NetworkClient.setServerUrl(targetUrl, savedServer.trim())
+                val result = NetworkClient.login(savedUser, savedPass)
+                isLoading = false
+                if (result.isSuccess) {
+                    Toast.makeText(context, "Automatisch angemeldet", Toast.LENGTH_SHORT).show()
+                    onLoginSuccess()
+                } else {
+                    errorMessage = "Automatischer Login fehlgeschlagen: " + (result.exceptionOrNull()?.message ?: "")
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -45,7 +87,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         OutlinedTextField(
             value = serverUrl,
             onValueChange = { serverUrl = it },
-            label = { Text("Server-URL") },
+            label = { Text("Server-URL oder Bucket-ID") },
+            placeholder = { Text("z.B. http://192.168.1.100:3000 oder psc_xxx") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -88,12 +131,25 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                     errorMessage = ""
                     
                     scope.launch {
-                        NetworkClient.setServerUrl(serverUrl)
+                        var targetUrl = serverUrl.trim()
+                        if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+                            errorMessage = "Löse Bucket-ID auf..."
+                            val resolved = resolveBucketUrl(targetUrl)
+                            if (resolved != null) {
+                                targetUrl = resolved
+                            } else {
+                                isLoading = false
+                                errorMessage = "Bucket-ID konnte nicht aufgelöst werden. Bitte überprüfe die Verbindung."
+                                return@launch
+                            }
+                        }
+
+                        NetworkClient.setServerUrl(targetUrl, serverUrl.trim())
                         val result = NetworkClient.login(username, password)
                         isLoading = false
                         if (result.isSuccess) {
                             sharedPrefs.edit()
-                                .putString("server_url", serverUrl)
+                                .putString("server_url", serverUrl.trim()) // Save the entered string (can be Bucket ID or URL)
                                 .putString("username", username)
                                 .putString("password", password)
                                 .apply()
@@ -110,5 +166,33 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 Text("Anmelden")
             }
         }
+    }
+}
+
+private suspend fun resolveBucketUrl(bucketId: String): String? = withContext(Dispatchers.IO) {
+    try {
+        val client = OkHttpClient()
+        val request = Request.Builder()
+            .url("https://keyvalue.immanuel.co/api/KeyVal/GetValue/$bucketId/url")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (response.isSuccessful) {
+                val hexJson = response.body?.string() ?: return@use null
+                val hexStr = Json.parseToJsonElement(hexJson).jsonPrimitive.content
+                
+                // Decode hex to string
+                val bytes = ByteArray(hexStr.length / 2)
+                for (i in bytes.indices) {
+                    val index = i * 2
+                    val j = hexStr.substring(index, index + 2).toInt(16)
+                    bytes[i] = j.toByte()
+                }
+                String(bytes, Charsets.UTF_8)
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        null
     }
 }

@@ -6,6 +6,12 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.pisecurecloud.network.NetworkClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -34,8 +40,21 @@ class BackupWorker(
             return Result.failure()
         }
 
+        var targetUrl = serverUrl.trim()
+        if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+            Log.d(TAG, "Server URL is a Bucket ID, resolving...")
+            val resolved = resolveBucketUrl(targetUrl)
+            if (resolved != null) {
+                targetUrl = resolved
+                Log.d(TAG, "Bucket ID resolved to: $targetUrl")
+            } else {
+                Log.e(TAG, "Failed to resolve Bucket ID: $targetUrl")
+                return Result.failure()
+            }
+        }
+
         // 1. Authenticate with server
-        NetworkClient.setServerUrl(serverUrl)
+        NetworkClient.setServerUrl(targetUrl, serverUrl.trim())
         val loginResult = NetworkClient.login(username, password)
         if (loginResult.isFailure) {
             Log.e(TAG, "Auth failed: ${loginResult.exceptionOrNull()?.message}")
@@ -204,4 +223,32 @@ class BackupWorker(
     }
 
     private data class MediaFileInfo(val file: File, val name: String, val mimeType: String, val size: Long)
+
+    private suspend fun resolveBucketUrl(bucketId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val client = OkHttpClient()
+            val request = Request.Builder()
+                .url("https://keyvalue.immanuel.co/api/KeyVal/GetValue/$bucketId/url")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val hexJson = response.body?.string() ?: return@use null
+                    val hexStr = Json.parseToJsonElement(hexJson).jsonPrimitive.content
+                    
+                    // Decode hex to string
+                    val bytes = ByteArray(hexStr.length / 2)
+                    for (i in bytes.indices) {
+                        val index = i * 2
+                        val j = hexStr.substring(index, index + 2).toInt(16)
+                        bytes[i] = j.toByte()
+                    }
+                    String(bytes, Charsets.UTF_8)
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
 }

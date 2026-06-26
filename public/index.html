@@ -418,6 +418,27 @@
                 </ol>
               </div>
             </div>
+
+            <!-- Android-App & Handy-Backup Karte (Neu) -->
+            <div class="glass-card" style="padding: 24px; margin-top: 24px; border: 1px solid var(--border-glass); border-radius: var(--radius-md);">
+              <h3 style="margin-bottom: 8px; font-size: 16px; font-weight: 600;">Android-App & Handy-Backup</h3>
+              <p class="subtitle" style="margin-bottom: 16px; font-size: 13px; line-height: 1.5; color: var(--text-muted);">
+                Verbinde die PiSecureCloud Android-App, um deine Dateien von unterwegs zu verwalten und automatische Backups deiner Fotos, Videos und Kontakte zu sichern.
+              </p>
+              
+              <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); padding: 16px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+                <h4 style="margin: 0 0 6px 0; font-size: 13px; color: var(--accent-secondary); display: flex; align-items: center; gap: 6px;">
+                  Verbindungs-ID (Bucket ID)
+                </h4>
+                <p style="margin: 0 0 12px 0; font-size: 12px; line-height: 1.5; color: var(--text-muted);">
+                  Gib diese ID in der Android-App unter „Server-URL oder Bucket-ID“ ein. Die App löst sie bei jeder Verbindung automatisch auf, sodass sie auch bei wechselnden Cloudflare-Adressen immer erreichbar bleibt!
+                </p>
+                <div style="background: rgba(0,0,0,0.2); padding: 12px 16px; border-radius: 8px; font-family: monospace; font-size: 13px; border: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center; overflow-x: auto; white-space: nowrap;">
+                  <span id="android-bucket-display" style="color: var(--accent-secondary); font-weight: bold;">Lade Bucket-ID...</span>
+                  <button class="btn-primary" onclick="copyAndroidBucketId()" style="width: auto; padding: 6px 12px; font-size: 11px; margin-left: 12px; flex-shrink: 0;">Kopieren</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
